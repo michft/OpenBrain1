@@ -47,7 +47,7 @@ openclaw --profile ob1-agent-memory plugins install . --link
     entries: {
       "nbj-ob1-agent-memory": {
         config: {
-          endpoint: "https://YOUR_PROJECT_REF.supabase.co/functions/v1/agent-memory-api",
+          endpoint: "https://YOUR_CONVEX_DEPLOYMENT.convex.site/agent-memory-api",
           accessKey: {
             source: "file",
             provider: "ob1_agent_memory",
@@ -63,6 +63,8 @@ openclaw --profile ob1-agent-memory plugins install . --link
 ```
 
 Configure `secrets.providers.ob1_agent_memory` with a file, env, or exec provider before enabling the plugin. The plugin resolves OpenClaw SecretRefs at tool execution time so the access key does not need to live in plaintext config.
+
+Legacy Supabase Agent Memory API endpoints are still valid for migration validation, but new OB1 Agent Memory installs should point at the Convex endpoint from `integrations/convex-open-brain`.
 
 Current OpenClaw builds also require explicit `tools.allow` entries before plugin tools are exposed to the model. `plugins inspect --runtime` can show the plugin is registered even when the agent cannot see the tools, so run a native tool smoke test after enabling the plugin.
 

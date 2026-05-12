@@ -7,6 +7,9 @@ supabase/
 .local/
 .agent/
 .claude.json
+.codex
+.codex/
+.claude/
 
 # Python caches
 __pycache__/
