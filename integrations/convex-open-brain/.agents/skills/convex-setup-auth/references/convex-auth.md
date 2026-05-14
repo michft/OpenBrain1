@@ -20,8 +20,7 @@ a third-party provider.
    - if CLI configuration requires interactive human input, stop and ask the
      user to complete that step before continuing
 6. Install the auth packages:
-   - `npm install @convex-dev/auth @auth/core@0.37.0`
-7. Run the initialization command:
+   - `npm install @convex-dev/auth @auth/core>=0.37.0`
    - `npx @convex-dev/auth`
 8. Confirm the initializer created:
    - `convex/auth.config.ts`

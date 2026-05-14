@@ -5,32 +5,15 @@ import type { Doc, Id } from "./_generated/dataModel";
 import { memoryIdFromString, responseMemory } from "./lib/format";
 import type { PublicMemory } from "./lib/format";
 import { getEmbedding } from "./lib/openrouter";
-
-const metadataValidator = v.record(v.string(), v.any());
-
-const runtimeValidator = v.object({
-  name: v.string(),
-  version: v.optional(v.union(v.string(), v.null())),
-});
-
-const channelValidator = v.object({
-  kind: v.optional(v.union(v.string(), v.null())),
-  id: v.optional(v.union(v.string(), v.null())),
-  thread_id: v.optional(v.union(v.string(), v.null())),
-});
-
-const sourceRefValidator = v.object({
-  kind: v.string(),
-  uri: v.optional(v.union(v.string(), v.null())),
-  title: v.optional(v.union(v.string(), v.null())),
-  timestamp: v.optional(v.union(v.string(), v.null())),
-});
-
-const artifactValidator = v.object({
-  kind: v.string(),
-  uri: v.string(),
-  description: v.optional(v.union(v.string(), v.null())),
-});
+import {
+  artifactValidator,
+  channelValidator,
+  metadataValidator,
+  modelUsedValidator,
+  retentionValidator,
+  runtimeValidator,
+  sourceRefValidator,
+} from "./lib/validators";
 
 const memoryPayloadValidator = v.object({
   decisions: v.array(v.string()),
@@ -320,7 +303,26 @@ export const recall = action({
       channelId: req.channel?.id ?? null,
       query: req.query,
       schemaVersion: req.schema_version,
-      requestPayload: req,
+      requestPayload: {
+        schema_version: req.schema_version,
+        workspace_id: req.workspace_id,
+        project_id: req.project_id ?? null,
+        task_id: req.task_id ?? null,
+        flow_id: req.flow_id ?? null,
+        runtime_name: req.runtime?.name ?? "unknown",
+        runtime_version: req.runtime?.version ?? null,
+        channel_kind: req.channel?.kind ?? null,
+        channel_id: req.channel?.id ?? null,
+        channel_thread_id: req.channel?.thread_id ?? null,
+        query: req.query,
+        max_items: maxItems,
+        max_tokens: req.limits?.max_tokens ?? null,
+        recency_days: req.limits?.recency_days ?? null,
+        project_only: req.scope?.project_only ?? null,
+        include_unconfirmed: req.scope?.include_unconfirmed ?? false,
+        include_stale: req.scope?.include_stale ?? false,
+        visibility: req.scope?.visibility ?? null,
+      },
       responsePolicy: { max_items: maxItems, include_unconfirmed: req.scope?.include_unconfirmed ?? false },
     });
     await ctx.runMutation(internal.agentMemory.insertRecallItems, {
@@ -462,7 +464,7 @@ export const writeback = action({
     content_hash: v.optional(v.union(v.string(), v.null())),
     channel: v.optional(channelValidator),
     runtime: v.optional(runtimeValidator),
-    models_used: v.array(v.object({ provider: v.string(), model: v.string(), role: v.string() })),
+    models_used: v.array(modelUsedValidator),
     source_refs: v.array(sourceRefValidator),
     memory_payload: memoryPayloadValidator,
     provenance: v.object({
@@ -470,10 +472,7 @@ export const writeback = action({
       confidence: v.number(),
       requires_review: v.boolean(),
     }),
-    retention: v.object({
-      ttl_days: v.optional(v.union(v.number(), v.null())),
-      stale_after_days: v.optional(v.union(v.number(), v.null())),
-    }),
+    retention: retentionValidator,
     visibility: metadataValidator,
   },
   handler: async (ctx, req): Promise<WritebackResponse> => {

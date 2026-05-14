@@ -5,8 +5,8 @@ import type { Doc, Id } from "./_generated/dataModel";
 import { compactFingerprint, idFromString, normalizeThought, tokenSimilarity } from "./lib/format";
 import type { PublicThought } from "./lib/format";
 import { extractMetadata, getEmbedding } from "./lib/openrouter";
-
-const metadataValidator = v.record(v.string(), v.any());
+import { metadataValidator, reflectionFactorValidator, reflectionOptionValidator } from "./lib/validators";
+import type { Metadata } from "./lib/validators";
 
 type UpsertThoughtResult = {
   id: Id<"thoughts">;
@@ -303,7 +303,7 @@ export const updateThought = mutation({
     const timestamp = now();
     const patch: {
       content?: string;
-      metadata?: Record<string, unknown>;
+      metadata?: Metadata;
       type?: string;
       importance?: number;
       qualityScore?: number;
@@ -475,8 +475,8 @@ export const addReflection = mutation({
   args: {
     thoughtId: v.string(),
     trigger_context: v.optional(v.string()),
-    options: v.optional(v.array(v.any())),
-    factors: v.optional(v.array(v.any())),
+    options: v.optional(v.array(reflectionOptionValidator)),
+    factors: v.optional(v.array(reflectionFactorValidator)),
     conclusion: v.optional(v.string()),
     confidence: v.optional(v.number()),
     reflection_type: v.optional(v.string()),

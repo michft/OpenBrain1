@@ -1,12 +1,48 @@
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
+import { metadataValidator, reflectionFactorValidator, reflectionOptionValidator } from "./lib/validators";
 
-const metadata = v.record(v.string(), v.any());
+const agentMemorySnapshot = v.object({
+  _id: v.id("agentMemories"),
+  _creationTime: v.number(),
+  thoughtId: v.optional(v.union(v.id("thoughts"), v.null())),
+  workspaceId: v.string(),
+  projectId: v.optional(v.union(v.string(), v.null())),
+  channelKind: v.optional(v.union(v.string(), v.null())),
+  channelId: v.optional(v.union(v.string(), v.null())),
+  channelThreadId: v.optional(v.union(v.string(), v.null())),
+  visibility: v.string(),
+  memoryType: v.string(),
+  summary: v.string(),
+  content: v.string(),
+  embedding: v.array(v.float64()),
+  lifecycleStatus: v.string(),
+  provenanceStatus: v.string(),
+  confidence: v.number(),
+  createdBy: v.string(),
+  runtimeName: v.optional(v.union(v.string(), v.null())),
+  runtimeVersion: v.optional(v.union(v.string(), v.null())),
+  provider: v.optional(v.union(v.string(), v.null())),
+  model: v.optional(v.union(v.string(), v.null())),
+  taskId: v.optional(v.union(v.string(), v.null())),
+  flowId: v.optional(v.union(v.string(), v.null())),
+  canUseAsInstruction: v.boolean(),
+  canUseAsEvidence: v.boolean(),
+  requiresUserConfirmation: v.boolean(),
+  reviewStatus: v.string(),
+  lastConfirmedAt: v.optional(v.union(v.string(), v.null())),
+  staleAfter: v.optional(v.union(v.string(), v.null())),
+  idempotencyKey: v.string(),
+  contentHash: v.string(),
+  metadata: metadataValidator,
+  createdAt: v.string(),
+  updatedAt: v.string(),
+});
 
 export default defineSchema({
   thoughts: defineTable({
     content: v.string(),
-    metadata,
+    metadata: metadataValidator,
     embedding: v.array(v.float64()),
     type: v.string(),
     sourceType: v.string(),
@@ -37,12 +73,12 @@ export default defineSchema({
   reflections: defineTable({
     thoughtId: v.id("thoughts"),
     triggerContext: v.string(),
-    options: v.array(v.any()),
-    factors: v.array(v.any()),
+    options: v.array(reflectionOptionValidator),
+    factors: v.array(reflectionFactorValidator),
     conclusion: v.string(),
     confidence: v.number(),
     reflectionType: v.string(),
-    metadata,
+    metadata: metadataValidator,
     createdAt: v.string(),
   }).index("by_thought", ["thoughtId"]),
 
@@ -76,7 +112,7 @@ export default defineSchema({
     staleAfter: v.optional(v.union(v.string(), v.null())),
     idempotencyKey: v.string(),
     contentHash: v.string(),
-    metadata,
+    metadata: metadataValidator,
     createdAt: v.string(),
     updatedAt: v.string(),
   })
@@ -113,8 +149,8 @@ export default defineSchema({
     actorId: v.optional(v.union(v.string(), v.null())),
     actorLabel: v.optional(v.union(v.string(), v.null())),
     notes: v.optional(v.union(v.string(), v.null())),
-    before: metadata,
-    after: metadata,
+    before: agentMemorySnapshot,
+    after: agentMemorySnapshot,
     createdAt: v.string(),
   }).index("by_memory", ["memoryId"]),
 
@@ -138,8 +174,8 @@ export default defineSchema({
     channelId: v.optional(v.union(v.string(), v.null())),
     query: v.string(),
     schemaVersion: v.string(),
-    requestPayload: metadata,
-    responsePolicy: metadata,
+    requestPayload: metadataValidator,
+    responsePolicy: metadataValidator,
     createdAt: v.string(),
   })
     .index("by_request", ["requestId"])
@@ -151,7 +187,7 @@ export default defineSchema({
     rank: v.number(),
     similarity: v.number(),
     rankingScore: v.number(),
-    usePolicySnapshot: metadata,
+    usePolicySnapshot: metadataValidator,
     used: v.optional(v.union(v.boolean(), v.null())),
     ignoredReason: v.optional(v.union(v.string(), v.null())),
     createdAt: v.string(),
@@ -167,7 +203,7 @@ export default defineSchema({
     actorLabel: v.optional(v.union(v.string(), v.null())),
     runtimeName: v.optional(v.union(v.string(), v.null())),
     taskId: v.optional(v.union(v.string(), v.null())),
-    payload: metadata,
+    payload: metadataValidator,
     createdAt: v.string(),
   }).index("by_workspace_created", ["workspaceId", "createdAt"]),
 });

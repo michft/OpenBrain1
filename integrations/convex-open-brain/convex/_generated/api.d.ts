@@ -13,6 +13,7 @@ import type * as brain from "../brain.js";
 import type * as http from "../http.js";
 import type * as lib_format from "../lib/format.js";
 import type * as lib_openrouter from "../lib/openrouter.js";
+import type * as lib_validators from "../lib/validators.js";
 
 import type {
   ApiFromModules,
@@ -26,6 +27,7 @@ declare const fullApi: ApiFromModules<{
   http: typeof http;
   "lib/format": typeof lib_format;
   "lib/openrouter": typeof lib_openrouter;
+  "lib/validators": typeof lib_validators;
 }>;
 
 /**
