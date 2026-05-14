@@ -3,9 +3,51 @@ import { action, internalMutation, internalQuery, mutation, query } from "./_gen
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import { compactFingerprint, idFromString, normalizeThought, tokenSimilarity } from "./lib/format";
+import type { PublicThought } from "./lib/format";
 import { extractMetadata, getEmbedding } from "./lib/openrouter";
 
 const metadataValidator = v.record(v.string(), v.any());
+
+type UpsertThoughtResult = {
+  id: Id<"thoughts">;
+  fingerprint: string;
+  action: "created" | "updated";
+};
+
+type CaptureThoughtResponse = {
+  thought_id: Id<"thoughts">;
+  action: "created" | "created_or_updated";
+  type: string;
+  sensitivity_tier: string;
+  content_fingerprint: string;
+  message: string;
+};
+
+type ListThoughtsResponse = {
+  data: ThoughtSearchResult[];
+  total: number;
+  page: number;
+  per_page: number;
+};
+
+type ThoughtSearchResult = PublicThought & Record<string, unknown>;
+
+type GetThoughtResponse = ThoughtSearchResult | { restricted: true } | null;
+
+type SemanticSearchResponse = {
+  results: ThoughtSearchResult[];
+  count: number;
+  total: number;
+  page: number;
+  per_page: number;
+  total_pages: number;
+  mode: "semantic";
+};
+
+type VectorMatch<TableName extends "thoughts"> = {
+  _id: Id<TableName>;
+  _score: number;
+};
 
 function now(): string {
   return new Date().toISOString();
@@ -86,7 +128,7 @@ export const listThoughts = query({
     order: v.optional(v.string()),
     exclude_restricted: v.optional(v.boolean()),
   },
-  handler: async (ctx, args) => {
+  handler: async (ctx, args): Promise<ListThoughtsResponse> => {
     const page = Math.max(1, Math.floor(args.page ?? 1));
     const perPage = Math.min(100, Math.max(1, Math.floor(args.per_page ?? 25)));
     const rows = await ctx.db.query("thoughts").collect();
@@ -104,7 +146,7 @@ export const listThoughts = query({
 
 export const getThought = query({
   args: { id: v.string(), exclude_restricted: v.optional(v.boolean()) },
-  handler: async (ctx, args) => {
+  handler: async (ctx, args): Promise<GetThoughtResponse> => {
     const row = await ctx.db.get(idFromString(args.id));
     if (!row) return null;
     if (args.exclude_restricted !== false && isRestricted(row)) return { restricted: true };
@@ -164,7 +206,7 @@ export const upsertThought = internalMutation({
     sensitivityTier: v.string(),
     status: v.optional(v.union(v.string(), v.null())),
   },
-  handler: async (ctx, args) => {
+  handler: async (ctx, args): Promise<UpsertThoughtResult> => {
     const timestamp = now();
     const fingerprint = compactFingerprint(args.content);
     const existing = await ctx.db
@@ -221,7 +263,7 @@ export const captureThought = action({
       source: sourceType,
       source_type: sourceType,
     };
-    const result = await ctx.runMutation(internal.brain.upsertThought, {
+    const result: UpsertThoughtResult = await ctx.runMutation(internal.brain.upsertThought, {
       content,
       metadata,
       embedding,
@@ -306,20 +348,20 @@ export const semanticSearch = action({
     threshold: v.optional(v.number()),
     exclude_restricted: v.optional(v.boolean()),
   },
-  handler: async (ctx, args) => {
+  handler: async (ctx, args): Promise<SemanticSearchResponse> => {
     const limit = Math.min(100, Math.max(1, Math.floor(args.limit ?? 25)));
     const page = Math.max(1, Math.floor(args.page ?? 1));
     const embedding = await getEmbedding(args.query);
-    const matches = await ctx.vectorSearch("thoughts", "by_embedding", {
+    const matches: VectorMatch<"thoughts">[] = await ctx.vectorSearch("thoughts", "by_embedding", {
       vector: embedding,
       limit: Math.min(256, Math.max(limit * page * 3, limit)),
     });
-    const rows = await ctx.runQuery(internal.brain.fetchThoughtRows, { ids: matches.map((match) => match._id) });
-    const byId = new Map<Id<"thoughts">, Doc<"thoughts">>(rows.map((row) => [row._id, row]));
-    const ordered = matches
+    const rows: Doc<"thoughts">[] = await ctx.runQuery(internal.brain.fetchThoughtRows, { ids: matches.map((match) => match._id) });
+    const byId = new Map<Id<"thoughts">, Doc<"thoughts">>(rows.map((row: Doc<"thoughts">) => [row._id, row]));
+    const ordered: ThoughtSearchResult[] = matches
       .filter((match) => match._score >= (args.threshold ?? 0.35))
       .map((match, index) => ({ match, row: byId.get(match._id), rank: index + 1 }))
-      .filter((item): item is { match: { _id: Id<"thoughts">; _score: number }; row: Doc<"thoughts">; rank: number } => Boolean(item.row))
+      .filter((item): item is { match: VectorMatch<"thoughts">; row: Doc<"thoughts">; rank: number } => Boolean(item.row))
       .filter((item) => args.exclude_restricted === false || !isRestricted(item.row))
       .map((item) => normalizeThought(item.row, { similarity: item.match._score, rank: item.rank }));
     const offset = (page - 1) * limit;

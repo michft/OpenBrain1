@@ -3,6 +3,7 @@ import { action, internalMutation, internalQuery, mutation, query } from "./_gen
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import { memoryIdFromString, responseMemory } from "./lib/format";
+import type { PublicMemory } from "./lib/format";
 import { getEmbedding } from "./lib/openrouter";
 
 const metadataValidator = v.record(v.string(), v.any());
@@ -65,6 +66,31 @@ type MemoryRow = {
   memory_type: string;
   content: string;
 };
+
+type VectorMatch<TableName extends "agentMemories"> = {
+  _id: Id<TableName>;
+  _score: number;
+};
+
+type RankedMemory = Doc<"agentMemories"> & {
+  similarity: number;
+  rankingScore: number;
+};
+
+type RecallResponse = {
+  schema_version: string;
+  request_id: string;
+  memories: PublicMemory[];
+};
+
+type UnsafeWritebackReason = {
+  reason: string;
+  memory_type: string;
+};
+
+type WritebackResponse =
+  | { error: string; unsafe: UnsafeWritebackReason[] }
+  | { schema_version: string; memories: PublicMemory[] };
 
 function now(): string {
   return new Date().toISOString();
@@ -264,19 +290,19 @@ export const recall = action({
     })),
     sensitivity: v.optional(metadataValidator),
   },
-  handler: async (ctx, req) => {
+  handler: async (ctx, req): Promise<RecallResponse> => {
     const maxItems = Math.min(50, Math.max(1, Math.floor(req.limits?.max_items ?? 10)));
     const embedding = await getEmbedding(req.query);
-    const matches = await ctx.vectorSearch("agentMemories", "by_embedding", {
+    const matches: VectorMatch<"agentMemories">[] = await ctx.vectorSearch("agentMemories", "by_embedding", {
       vector: embedding,
       limit: Math.min(256, Math.max(maxItems * 4, 20)),
       filter: (q) => q.eq("workspaceId", req.workspace_id),
     });
-    const rows = await ctx.runQuery(internal.agentMemory.fetchMemoryRows, { ids: matches.map((match) => match._id) });
-    const byId = new Map<Id<"agentMemories">, Doc<"agentMemories">>(rows.map((row) => [row._id, row]));
-    const ranked = matches
+    const rows: Doc<"agentMemories">[] = await ctx.runQuery(internal.agentMemory.fetchMemoryRows, { ids: matches.map((match) => match._id) });
+    const byId = new Map<Id<"agentMemories">, Doc<"agentMemories">>(rows.map((row: Doc<"agentMemories">) => [row._id, row]));
+    const ranked: RankedMemory[] = matches
       .map((match) => ({ match, memory: byId.get(match._id) }))
-      .filter((item): item is { match: { _id: Id<"agentMemories">; _score: number }; memory: Doc<"agentMemories"> } => Boolean(item.memory))
+      .filter((item): item is { match: VectorMatch<"agentMemories">; memory: Doc<"agentMemories"> } => Boolean(item.memory))
       .filter((item) => scopeMatches(item.memory, req))
       .map((item) => ({ ...item.memory, similarity: item.match._score, rankingScore: rankMemory(item.memory, item.match._score) }))
       .sort((a, b) => b.rankingScore - a.rankingScore)
@@ -299,7 +325,7 @@ export const recall = action({
     });
     await ctx.runMutation(internal.agentMemory.insertRecallItems, {
       traceId,
-      items: ranked.map((memory, index) => ({
+      items: ranked.map((memory: RankedMemory, index: number) => ({
         memoryId: memory._id,
         rank: index + 1,
         similarity: memory.similarity,
@@ -450,10 +476,10 @@ export const writeback = action({
     }),
     visibility: metadataValidator,
   },
-  handler: async (ctx, req) => {
+  handler: async (ctx, req): Promise<WritebackResponse> => {
     const rows = memoryRows(req.memory_payload);
     if (rows.length === 0) throw new Error("memory_payload produced no memory rows");
-    const unsafe = rows.flatMap((row) => unsafeReasons(row.content).map((reason) => ({ reason, memory_type: row.memory_type })));
+    const unsafe: UnsafeWritebackReason[] = rows.flatMap((row) => unsafeReasons(row.content).map((reason) => ({ reason, memory_type: row.memory_type })));
     if (unsafe.length > 0) {
       await ctx.runMutation(internal.agentMemory.insertAudit, {
         eventType: "memory_rejected",
@@ -468,12 +494,12 @@ export const writeback = action({
     const provider = req.models_used[0]?.provider ?? null;
     const model = req.models_used[0]?.model ?? null;
     const defaultInstruction = ["user_confirmed", "imported"].includes(req.provenance.default_status) && !req.provenance.requires_review;
-    const created = [];
+    const created: Doc<"agentMemories">[] = [];
     for (const [index, row] of rows.entries()) {
       const contentHash = await sha256Hex(`${row.memory_type}:${row.content}`);
       const baseKey = req.idempotency_key || `${req.workspace_id}:${req.runtime?.name ?? "unknown"}:${req.task_id || "taskless"}:${req.step_id || "step"}:${contentHash}`;
       const embedding = await getEmbedding(row.content);
-      const memory = await ctx.runMutation(internal.agentMemory.insertMemory, {
+      const memory: Doc<"agentMemories"> = await ctx.runMutation(internal.agentMemory.insertMemory, {
         thoughtId: null,
         workspaceId: req.workspace_id,
         projectId: req.project_id ?? null,

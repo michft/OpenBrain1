@@ -43,7 +43,7 @@
 
 ## Code Style
 - Always strive for concise, simple solutions.
-- **If a problem can be solved in a simpler way, propose it.
+- **If a problem can be solved in a simpler way, propose it.**
 
 ## Workflow
 - If asked to do too much work at once, stop and state work clearly.
