@@ -1,7 +1,9 @@
 import { httpRouter } from "convex/server";
+import type { FunctionArgs } from "convex/server";
 import { httpAction } from "./_generated/server";
 import { api } from "./_generated/api";
 import { thoughtTitle, thoughtUrl } from "./lib/format";
+import type { PublicThought } from "./lib/format";
 
 const http = httpRouter();
 
@@ -24,6 +26,33 @@ type ToolCall = {
   name?: string;
   arguments?: Record<string, unknown>;
 };
+
+type ThoughtSearchResult = PublicThought & Record<string, unknown>;
+
+type SemanticSearchResponse = {
+  results: ThoughtSearchResult[];
+  count: number;
+  total: number;
+  page: number;
+  per_page: number;
+  total_pages: number;
+  mode: "semantic";
+};
+
+type ListThoughtsResponse = {
+  data: PublicThought[];
+  total: number;
+  page: number;
+  per_page: number;
+};
+
+type CaptureThoughtArgs = FunctionArgs<typeof api.brain.captureThought>;
+type TextSearchArgs = FunctionArgs<typeof api.brain.textSearch>;
+type SemanticSearchArgs = FunctionArgs<typeof api.brain.semanticSearch>;
+type RecallArgs = FunctionArgs<typeof api.agentMemory.recall>;
+type WritebackArgs = FunctionArgs<typeof api.agentMemory.writeback>;
+type ReportUsageArgs = FunctionArgs<typeof api.agentMemory.reportUsage>;
+type ReviewMemoryArgs = FunctionArgs<typeof api.agentMemory.reviewMemory>;
 
 function json(data: unknown, status = 200): Response {
   return new Response(JSON.stringify(data), {
@@ -104,13 +133,13 @@ async function restHandler(ctx: HttpCtx, request: Request): Promise<Response> {
       return json(await ctx.runMutation(api.brain.deleteThought, { id: thoughtMatch[1] }));
     }
     if (request.method === "POST" && path === "/capture") {
-      return json(await ctx.runAction(api.brain.captureThought, await readBody(request)));
+      return json(await ctx.runAction(api.brain.captureThought, (await readBody(request)) as CaptureThoughtArgs));
     }
     if (request.method === "POST" && path === "/search") {
       const body = await readBody(request);
       const mode = typeof body.mode === "string" ? body.mode : "semantic";
-      if (mode === "text") return json(await ctx.runQuery(api.brain.textSearch, body));
-      return json(await ctx.runAction(api.brain.semanticSearch, body));
+      if (mode === "text") return json(await ctx.runQuery(api.brain.textSearch, body as TextSearchArgs));
+      return json(await ctx.runAction(api.brain.semanticSearch, body as SemanticSearchArgs));
     }
     if (request.method === "GET" && path === "/duplicates") {
       return json(await ctx.runQuery(api.brain.duplicates, {
@@ -155,16 +184,16 @@ async function agentMemoryHandler(ctx: HttpCtx, request: Request): Promise<Respo
       return json({ ok: true, service: "agent-memory-api", backend: "convex", version: "0.1.0" });
     }
     if (request.method === "POST" && path === "/recall") {
-      return json(await ctx.runAction(api.agentMemory.recall, await readBody(request)));
+      return json(await ctx.runAction(api.agentMemory.recall, (await readBody(request)) as RecallArgs));
     }
     if (request.method === "POST" && path === "/writeback") {
-      const result = await ctx.runAction(api.agentMemory.writeback, await readBody(request));
+      const result = await ctx.runAction(api.agentMemory.writeback, (await readBody(request)) as WritebackArgs);
       if ("error" in result) return json(result, 422);
       return json(result);
     }
     const usageMatch = path.match(/^\/recall\/([^/]+)\/usage$/);
     if (usageMatch && request.method === "POST") {
-      return json(await ctx.runMutation(api.agentMemory.reportUsage, { request_id: usageMatch[1], ...(await readBody(request)) }));
+      return json(await ctx.runMutation(api.agentMemory.reportUsage, { request_id: usageMatch[1], ...(await readBody(request)) } as ReportUsageArgs));
     }
     if (request.method === "GET" && path === "/memories/review") {
       const workspaceId = url.searchParams.get("workspace_id");
@@ -190,7 +219,7 @@ async function agentMemoryHandler(ctx: HttpCtx, request: Request): Promise<Respo
     }
     const memoryReviewMatch = path.match(/^\/memories\/([^/]+)\/review$/);
     if (memoryReviewMatch && request.method === "PATCH") {
-      return json(await ctx.runMutation(api.agentMemory.reviewMemory, { id: memoryReviewMatch[1], ...(await readBody(request)) }));
+      return json(await ctx.runMutation(api.agentMemory.reviewMemory, { id: memoryReviewMatch[1], ...(await readBody(request)) } as ReviewMemoryArgs));
     }
     const memoryMatch = path.match(/^\/memories\/([^/]+)$/);
     if (memoryMatch && request.method === "GET") {
@@ -251,7 +280,7 @@ async function mcpHandler(ctx: HttpCtx, request: Request): Promise<Response> {
   try {
     if (call.name === "search" || call.name === "search_thoughts") {
       const query = typeof args.query === "string" ? args.query : "";
-      const result = await ctx.runAction(api.brain.semanticSearch, {
+      const result: SemanticSearchResponse = await ctx.runAction(api.brain.semanticSearch, {
         query,
         limit: typeof args.limit === "number" ? args.limit : 10,
         threshold: typeof args.threshold === "number" ? args.threshold : 0.5,
@@ -262,7 +291,7 @@ async function mcpHandler(ctx: HttpCtx, request: Request): Promise<Response> {
           content: [{
             type: "text",
             text: JSON.stringify({
-              results: result.results.map((thought) => ({
+              results: result.results.map((thought: ThoughtSearchResult) => ({
                 id: thought.id,
                 title: thoughtTitle(thought.content, thought.created_at),
                 url: thoughtUrl(thought.id),
@@ -271,7 +300,7 @@ async function mcpHandler(ctx: HttpCtx, request: Request): Promise<Response> {
           }],
         });
       }
-      const text = result.results.map((thought, index) => {
+      const text = result.results.map((thought: ThoughtSearchResult, index: number) => {
         const topics = Array.isArray(thought.metadata.topics) ? `\nTopics: ${thought.metadata.topics.join(", ")}` : "";
         return `--- Result ${index + 1} (${Math.round(Number(thought.similarity || 0) * 100)}% match) ---\nCaptured: ${new Date(thought.created_at).toLocaleDateString()}\nType: ${thought.type}${topics}\n\n${thought.content}`;
       }).join("\n\n");
@@ -295,12 +324,12 @@ async function mcpHandler(ctx: HttpCtx, request: Request): Promise<Response> {
       });
     }
     if (call.name === "list_thoughts") {
-      const result = await ctx.runQuery(api.brain.listThoughts, {
+      const result: ListThoughtsResponse = await ctx.runQuery(api.brain.listThoughts, {
         per_page: typeof args.limit === "number" ? args.limit : 10,
         type: typeof args.type === "string" ? args.type : undefined,
         exclude_restricted: true,
       });
-      const text = result.data.map((thought, index) => `${index + 1}. [${new Date(thought.created_at).toLocaleDateString()}] (${thought.type})\n   ${thought.content}`).join("\n\n");
+      const text = result.data.map((thought: PublicThought, index: number) => `${index + 1}. [${new Date(thought.created_at).toLocaleDateString()}] (${thought.type})\n   ${thought.content}`).join("\n\n");
       return mcpResult(rpc.id, { content: [{ type: "text", text: text || "No thoughts found." }] });
     }
     if (call.name === "thought_stats") {
