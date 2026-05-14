@@ -14,8 +14,9 @@ Usage:
     python import-perplexity.py path/to/export.xlsx [options]
 
 Ingestion modes:
-    Default:              Supabase direct insert (requires SUPABASE_URL,
-                          SUPABASE_SERVICE_ROLE_KEY, OPENROUTER_API_KEY)
+    Default:              Convex-compatible HTTP capture when OB1_API_URL and
+                          OB1_API_KEY are set; otherwise legacy Supabase direct
+                          insert for migration validation.
 
 Options:
     --xlsx PATH           Path to Perplexity .xlsx export (required)
@@ -30,8 +31,10 @@ Options:
     --report FILE         Write a markdown report of everything imported
 
 Environment variables:
-    SUPABASE_URL               Supabase project URL
-    SUPABASE_SERVICE_ROLE_KEY  Supabase service role key
+    OB1_API_URL                Convex Open Brain API URL (preferred)
+    OB1_API_KEY                Convex Open Brain access key (preferred)
+    SUPABASE_URL               Legacy Supabase project URL
+    SUPABASE_SERVICE_ROLE_KEY  Legacy Supabase service role key
     OPENROUTER_API_KEY         OpenRouter API key (summarization + embeddings)
 """
 
@@ -55,6 +58,8 @@ OLLAMA_BASE = "http://localhost:11434"
 # The env var name uses the legacy convention for cross-recipe consistency.
 SUPABASE_URL = os.environ.get("SUPABASE_URL", "")
 SUPABASE_SERVICE_ROLE_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "")
+OB1_API_URL = os.environ.get("OB1_API_URL", "").rstrip("/")
+OB1_API_KEY = os.environ.get("OB1_API_KEY", "")
 OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY", "")
 
 SUMMARIZATION_PROMPT = """\
@@ -624,6 +629,48 @@ def ingest_thought_supabase(content, metadata_dict, created_at=None):
     return {"ok": True}
 
 
+def ingest_thought_http(content, metadata_dict, created_at=None):
+    """Insert a thought through the Convex-compatible Open Brain HTTP API."""
+    metadata = {
+        **metadata_dict,
+        "source": metadata_dict.get("source", "perplexity"),
+        "source_type": metadata_dict.get("source_type", "perplexity"),
+    }
+    if created_at:
+        metadata["created_at_source"] = created_at
+
+    resp = http_post_with_retry(
+        f"{OB1_API_URL}/capture",
+        headers={
+            "Content-Type": "application/json",
+            "x-brain-key": OB1_API_KEY,
+        },
+        body={
+            "content": content,
+            "metadata": metadata,
+            "source_type": "perplexity",
+        },
+    )
+
+    if not resp:
+        return {"ok": False, "error": "No response from Open Brain API"}
+
+    if resp.status_code not in (200, 201):
+        try:
+            error_detail = resp.json()
+        except ValueError:
+            error_detail = resp.text
+        return {"ok": False, "error": f"HTTP {resp.status_code}: {error_detail}"}
+
+    return {"ok": True}
+
+
+def ingest_thought(content, metadata_dict, created_at=None):
+    if OB1_API_URL and OB1_API_KEY:
+        return ingest_thought_http(content, metadata_dict, created_at=created_at)
+    return ingest_thought_supabase(content, metadata_dict, created_at=created_at)
+
+
 # ─── CLI ─────────────────────────────────────────────────────────────────────
 
 
@@ -785,7 +832,7 @@ def process_conversations(conversations, sync_log, args):
         all_ok = True
         for i, thought in enumerate(thoughts):
             content = f"[Perplexity: {title} | {date_str}] {thought}"
-            result = ingest_thought_supabase(content, metadata, created_at=created_iso)
+            result = ingest_thought(content, metadata, created_at=created_iso)
 
             if result.get("ok"):
                 stats["ingested"] += 1
@@ -939,7 +986,7 @@ def process_memory(memories, sync_log, args):
             else:
                 content = f"[Perplexity Memory: {synthetic_key}] {text}"
 
-            result = ingest_thought_supabase(content, meta, created_at=created_iso)
+            result = ingest_thought(content, meta, created_at=created_iso)
 
             if result.get("ok"):
                 stats["ingested"] += 1
@@ -976,16 +1023,10 @@ def main():
 
     # Validate env vars for live mode
     if not args.dry_run:
-        if not SUPABASE_URL:
-            print("Error: SUPABASE_URL environment variable required.")
+        if not ((OB1_API_URL and OB1_API_KEY) or (SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY)):
+            print("Error: OB1_API_URL/OB1_API_KEY or SUPABASE_URL/SUPABASE_SERVICE_ROLE_KEY required.")
             print(
-                "Set it to your Supabase project URL (e.g., https://xxxxx.supabase.co)"
-            )
-            sys.exit(1)
-        if not SUPABASE_SERVICE_ROLE_KEY:
-            print("Error: SUPABASE_SERVICE_ROLE_KEY environment variable required.")
-            print(
-                "This is your Supabase Secret Key (Settings → API → Secret key, starts with sb_secret_)"
+                "Set OB1_API_URL to your Convex .convex.site URL for the new backend, or use Supabase env vars for legacy validation."
             )
             sys.exit(1)
         if not OPENROUTER_API_KEY:

@@ -31,7 +31,7 @@ Provides 9 pages for managing your thoughts:
 
 ## Prerequisites
 
-- A working Open Brain setup with the **REST API gateway** (`open-brain-rest`) deployed from [integrations/open-brain-rest](../../integrations/open-brain-rest/)
+- A working Open Brain setup with the **Convex Open Brain backend** deployed from [integrations/convex-open-brain](../../integrations/convex-open-brain/)
 - **Node.js 18+** installed
 - A **Vercel account** (free tier works) or any Node.js hosting
 
@@ -39,8 +39,8 @@ Provides 9 pages for managing your thoughts:
 
 | Credential | Where to get it | Where it goes |
 |------------|----------------|---------------|
-| `NEXT_PUBLIC_API_URL` | Your Supabase project URL + `/functions/v1/open-brain-rest` | `.env` or hosting env vars |
-| `AGENT_MEMORY_API_URL` | Optional. Your Supabase project URL + `/functions/v1/agent-memory-api` | `.env` or hosting env vars |
+| `NEXT_PUBLIC_API_URL` | Your Convex HTTP actions URL, e.g. `https://YOUR_DEPLOYMENT.convex.site` | `.env` or hosting env vars |
+| `AGENT_MEMORY_API_URL` | Optional. Your Convex HTTP actions URL + `/agent-memory-api` | `.env` or hosting env vars |
 | `AGENT_MEMORY_WORKSPACE_ID` | Optional. Default workspace for Agent Memory governance views | `.env` or hosting env vars |
 | `AGENT_MEMORY_PROJECT_ID` | Optional. Default project filter for Agent Memory governance views | `.env` or hosting env vars |
 | `SESSION_SECRET` | Generate: `openssl rand -hex 32` | `.env` or hosting env vars |
@@ -55,7 +55,7 @@ Provides 9 pages for managing your thoughts:
 
 ```bash
 # From the OB1 repo
-cd dashboards/open-brain-dashboard
+cd dashboards/open-brain-dashboard-next
 ```
 
 Or copy the folder to your own project directory.
@@ -63,7 +63,7 @@ Or copy the folder to your own project directory.
 ### Step 2: Install dependencies
 
 ```bash
-npm install
+pnpm install
 ```
 
 ### Step 3: Configure environment
@@ -75,9 +75,9 @@ cp .env.example .env
 Edit `.env` and set your values:
 
 ```
-NEXT_PUBLIC_API_URL=https://YOUR-PROJECT-REF.supabase.co/functions/v1/open-brain-rest
-# Optional if your Agent Memory function follows the standard slug:
-# AGENT_MEMORY_API_URL=https://YOUR-PROJECT-REF.supabase.co/functions/v1/agent-memory-api
+NEXT_PUBLIC_API_URL=https://YOUR-CONVEX-DEPLOYMENT.convex.site
+# Optional if your Agent Memory function follows the standard path:
+# AGENT_MEMORY_API_URL=https://YOUR-CONVEX-DEPLOYMENT.convex.site/agent-memory-api
 # AGENT_MEMORY_WORKSPACE_ID=ob1-staging
 SESSION_SECRET=your-32-char-secret-here
 # Optional on HTTPS hosts:
@@ -87,17 +87,17 @@ SESSION_SECRET=your-32-char-secret-here
 ### Step 4: Run locally
 
 ```bash
-npm run dev
+pnpm dev
 ```
 
 Open [http://localhost:3000](http://localhost:3000). You should see the login page.
 
-Enter your Open Brain API key (the `MCP_ACCESS_KEY` from your Supabase Edge Function secrets). After login, the dashboard loads with your stats and recent thoughts.
+Enter your Open Brain API key (`MCP_ACCESS_KEY` from your Convex environment). After login, the dashboard loads with your stats and recent thoughts.
 
 ### Step 5: Deploy to Vercel (optional)
 
 ```bash
-npx vercel --prod
+pnpm dlx vercel --prod
 ```
 
 Or connect the folder to Vercel via the dashboard. Set the environment variables (`NEXT_PUBLIC_API_URL`, `SESSION_SECRET`) in your Vercel project settings.
@@ -240,11 +240,11 @@ Do not enable `OB1_DEMO_AUTH_BYPASS` in shared previews or production. It exists
 
 ## Troubleshooting
 
-1. **"Could not reach API" on login** — Verify `NEXT_PUBLIC_API_URL` is correct and your REST API gateway (`open-brain-rest`) is deployed. Test with: `curl https://YOUR-REF.supabase.co/functions/v1/open-brain-rest/health -H "x-brain-key: YOUR_KEY"`.
+1. **"Could not reach API" on login** — Verify `NEXT_PUBLIC_API_URL` is correct and your Convex HTTP actions are deployed. Test with: `curl https://YOUR-DEPLOYMENT.convex.site/health -H "x-brain-key: YOUR_KEY"`.
 
 2. **"SESSION_SECRET env var is required"** — The app requires a 32+ character secret for cookie encryption. Generate one with `openssl rand -hex 32`.
 
-3. **Build fails with SWC error** — This happens when `node_modules` was installed on a different platform (e.g., Windows modules on Linux). Delete `node_modules` and `package-lock.json`, then run `npm install` on your target platform.
+3. **Build fails with SWC error** — This happens when `node_modules` was installed on a different platform (e.g., Windows modules on Linux). Delete `node_modules` and reinstall on your target platform.
 
 4. **Search returns no results** — Ensure your thoughts have embeddings. Semantic search requires the `embedding` column to be populated. Run an embedding backfill if needed.
 

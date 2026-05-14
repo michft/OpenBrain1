@@ -14,9 +14,10 @@ Usage:
     python import-chatgpt.py path/to/extracted-dir/ [options]
 
 Ingestion modes:
-    Default:              Supabase direct insert (requires SUPABASE_URL,
+    Default:              Legacy Supabase direct insert (requires SUPABASE_URL,
                           SUPABASE_SERVICE_ROLE_KEY, OPENROUTER_API_KEY)
-    --ingest-endpoint:    Custom endpoint (requires INGEST_URL, INGEST_KEY)
+    --ingest-endpoint:    Convex-compatible HTTP endpoint (requires OB1_API_URL
+                          and OB1_API_KEY, or INGEST_URL and INGEST_KEY)
 
 Options:
     --dry-run              Parse, filter, extract, but don't ingest
@@ -38,8 +39,10 @@ Environment variables:
     SUPABASE_URL               Supabase project URL (required for default mode)
     SUPABASE_SERVICE_ROLE_KEY  Supabase service role key (required for default mode)
     OPENROUTER_API_KEY         OpenRouter API key (required for extraction + embeddings)
-    INGEST_URL                 Custom ingest endpoint URL (required with --ingest-endpoint)
-    INGEST_KEY                 Custom ingest endpoint auth key (required with --ingest-endpoint)
+    OB1_API_URL                Convex Open Brain API URL (preferred with --ingest-endpoint)
+    OB1_API_KEY                Convex Open Brain access key (preferred with --ingest-endpoint)
+    INGEST_URL                 Custom ingest endpoint URL (fallback with --ingest-endpoint)
+    INGEST_KEY                 Custom ingest endpoint auth key (fallback with --ingest-endpoint)
 """
 
 import argparse
@@ -73,8 +76,10 @@ OLLAMA_BASE = "http://localhost:11434"
 SUPABASE_URL = os.environ.get("SUPABASE_URL", "")
 SUPABASE_SERVICE_ROLE_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "")
 OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY", "")
-INGEST_URL = os.environ.get("INGEST_URL", "")
-INGEST_KEY = os.environ.get("INGEST_KEY", "")
+OB1_API_URL = os.environ.get("OB1_API_URL", "").rstrip("/")
+OB1_API_KEY = os.environ.get("OB1_API_KEY", "")
+INGEST_URL = os.environ.get("INGEST_URL", f"{OB1_API_URL}/capture" if OB1_API_URL else "")
+INGEST_KEY = os.environ.get("INGEST_KEY", OB1_API_KEY)
 
 # ─── Focus Presets ───────────────────────────────────────────────────────────
 
@@ -572,20 +577,25 @@ def ingest_thought_supabase(content, metadata_dict, embed_text=None):
 
 
 def ingest_thought_endpoint(content, extra_metadata, full_text=None):
-    """POST a thought to a custom ingest endpoint."""
+    """POST a thought to a Convex-compatible ingest endpoint."""
+    metadata = {
+        **extra_metadata,
+        "source": "chatgpt",
+        "source_type": "chatgpt",
+    }
     body = {
         "content": content,
-        "source": "chatgpt",
-        "extra_metadata": extra_metadata,
+        "metadata": metadata,
+        "source_type": "chatgpt",
     }
     if full_text:
-        body["full_text"] = full_text
+        metadata["full_text"] = full_text
 
     resp = http_post_with_retry(
         INGEST_URL,
         headers={
             "Content-Type": "application/json",
-            "x-ingest-key": INGEST_KEY,
+            "x-brain-key": INGEST_KEY,
         },
         body=body,
     )
@@ -729,7 +739,7 @@ Examples:
     parser.add_argument("--raw", action="store_true", help="Skip extraction, ingest user messages directly")
     parser.add_argument("--verbose", action="store_true", help="Show full thoughts during processing")
     parser.add_argument("--report", type=str, metavar="FILE", help="Write a markdown report of everything imported")
-    parser.add_argument("--ingest-endpoint", action="store_true", help="Use INGEST_URL/INGEST_KEY instead of Supabase direct insert")
+    parser.add_argument("--ingest-endpoint", action="store_true", help="Use OB1_API_URL/OB1_API_KEY or INGEST_URL/INGEST_KEY instead of legacy Supabase direct insert")
     parser.add_argument("--store-conversations", action="store_true", help="Also store conversation metadata and pyramid summaries in chatgpt_conversations table")
     parser.add_argument("--min-messages", type=int, default=0, help="Override minimum message count for filtering")
     parser.add_argument("--min-words", type=int, default=0, help="Override minimum word count for borderline filtering (default: 50)")
@@ -769,10 +779,10 @@ def main():
     if not args.dry_run:
         if args.ingest_endpoint:
             if not INGEST_URL:
-                print("Error: INGEST_URL environment variable required with --ingest-endpoint.")
+                print("Error: OB1_API_URL or INGEST_URL environment variable required with --ingest-endpoint.")
                 sys.exit(1)
             if not INGEST_KEY:
-                print("Error: INGEST_KEY environment variable required with --ingest-endpoint.")
+                print("Error: OB1_API_KEY or INGEST_KEY environment variable required with --ingest-endpoint.")
                 sys.exit(1)
         else:
             if not SUPABASE_URL:
