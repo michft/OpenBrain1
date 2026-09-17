@@ -1,0 +1,19 @@
+{
+  "name": "ob1-convex-open-brain",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "convex dev",
+    "deploy": "convex deploy",
+    "codegen": "convex codegen",
+    "typecheck": "tsc --noEmit",
+    "smoke": "node smoke/live-smoke.mjs"
+  },
+  "dependencies": {
+    "convex": "^1.28.0"
+  },
+  "devDependencies": {
+    "@types/node": "^25.7.0",
+    "typescript": "^5.9.3"
+  }
+}

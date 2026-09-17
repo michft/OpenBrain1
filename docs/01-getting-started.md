@@ -6,8 +6,11 @@ This is the core of Open Brain — the foundation everything else builds on. Onc
 
 About 30 minutes. Zero coding experience. Two services:
 
-- **[Supabase](https://supabase.com)** — Your database (free tier)
+- **[Convex](https://convex.dev)** — Your database, server functions, HTTP API, and vector search runtime
 - **[OpenRouter](https://openrouter.ai)** — Your AI gateway (~$5 in credits, lasts months)
+
+> [!NOTE]
+> Older Open Brain installs used Supabase + pgvector. Those files remain in this repo for migration validation, but new installs should start with the Convex backend in [`integrations/convex-open-brain`](../integrations/convex-open-brain/).
 
 ---
 
@@ -28,7 +31,52 @@ You're going to generate API keys, passwords, and IDs across three different ser
 
 ---
 
-![Step 1](https://img.shields.io/badge/Step_1-Create_Your_Supabase_Project-E53935?style=for-the-badge)
+![Step 1](https://img.shields.io/badge/Step_1-Create_Your_Convex_Project-E53935?style=for-the-badge)
+
+Convex is your database and HTTP runtime. It stores thoughts, embeddings, metadata, Agent Memory sidecars, review state, recall traces, and audit events.
+
+1. Go to [convex.dev](https://convex.dev) and sign up
+2. Create a project named `open-brain` or use the Convex CLI during setup
+3. Open [`integrations/convex-open-brain`](../integrations/convex-open-brain/)
+4. Copy `.env.example` to `.env.local`
+5. Fill in `MCP_ACCESS_KEY`, `OPENROUTER_API_KEY`, and your Convex deployment values
+
+```bash
+cd integrations/convex-open-brain
+pnpm install
+pnpm convex dev
+```
+
+Set production environment variables before deploying:
+
+```bash
+pnpm convex env set MCP_ACCESS_KEY "your-generated-access-key"
+pnpm convex env set OPENROUTER_API_KEY "sk-or-v1-..."
+pnpm convex env set OPENROUTER_BASE "https://openrouter.ai/api/v1"
+pnpm convex deploy
+```
+
+✅ **Done when:** `https://YOUR_DEPLOYMENT.convex.site/health` returns `{"ok":true}` when called with `x-brain-key: YOUR_MCP_ACCESS_KEY`.
+
+Dashboard configuration:
+
+```bash
+NEXT_PUBLIC_API_URL=https://YOUR_DEPLOYMENT.convex.site
+AGENT_MEMORY_API_URL=https://YOUR_DEPLOYMENT.convex.site/agent-memory-api
+SESSION_SECRET="$(openssl rand -hex 32)"
+```
+
+MCP connection URL:
+
+```text
+https://YOUR_DEPLOYMENT.convex.site/mcp?key=YOUR_MCP_ACCESS_KEY
+```
+
+Legacy Supabase setup begins below and is preserved only for existing installs and migration validation.
+
+---
+
+![Legacy Step 1](https://img.shields.io/badge/Legacy-Create_Your_Supabase_Project-777?style=for-the-badge)
 
 Supabase is your database. It stores your thoughts as raw text, vector embeddings, and structured metadata. It also gives you a REST API automatically.
 
@@ -904,9 +952,9 @@ The metadata extraction is best-effort — the LLM is making its best guess with
 <details>
 <summary>🔍 <strong>How It Works Under the Hood</strong></summary>
 
-**When you capture from any AI via MCP:** your AI client sends the text to the `capture_thought` tool → the MCP server generates an embedding (1536-dimensional vector of meaning) AND extracts metadata via LLM in parallel → both get stored as a single row in Supabase → confirmation returned to your AI.
+**When you capture from any AI via MCP:** your AI client sends the text to the `capture_thought` tool → the MCP server generates an embedding (1536-dimensional vector of meaning) AND extracts metadata via LLM in parallel → both get stored as a Convex `thoughts` document → confirmation returned to your AI.
 
-**When you search your brain:** your AI client sends the query to the MCP Edge Function → the function generates an embedding of your question → Supabase matches it against every stored thought by vector similarity → results come back ranked by meaning, not keywords.
+**When you search your brain:** your AI client sends the query to the MCP endpoint → the function generates an embedding of your question → Convex vector search matches it against stored thoughts → results come back ranked by meaning, not keywords.
 
 The embedding is what makes retrieval powerful. "Sarah's thinking about leaving" and "What did I note about career changes?" match semantically even though they share zero keywords. The metadata is a bonus layer for structured filtering on top.
 
