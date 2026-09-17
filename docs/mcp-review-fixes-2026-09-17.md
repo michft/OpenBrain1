@@ -56,4 +56,6 @@ PR [#2](https://github.com/michft/OpenBrain1/pull/2) at `7672b495` passed Convex
 
 After pushing the review fixes, Markdown lint passed on GitHub. The separate [gate startup failure](https://github.com/michft/OpenBrain1/actions/runs/35192022056) exposes a workflow annotation: the embedded run script exceeds the 21,000-byte expression limit (21,049 UTF-8 bytes despite only 20,715 characters). Decorative comment separators were shortened to fit the limit. Check logic and enforcement remain unchanged; the previous jobless failure was a workflow validation error, not a completed gate review.
 
+At `a363903b`, Markdown lint and Convex checks both passed. The gate then reached its script but exited before producing an artifact: an optional author suffix used a command substitution returning status 1 when no GitHub handle was present. Under `bash -e`, the enclosing assignment stopped execution. The suffix now uses an explicit conditional, verified with the empty-handle case; validation rules remain unchanged.
+
 Linear NAT-833 remains unavailable through the configured account (previous lookup returned `Entity not found`); this document records the implementation checkpoint.

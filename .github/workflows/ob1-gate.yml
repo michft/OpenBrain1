@@ -587,7 +587,11 @@ jobs:
                 found_contributor=true
               fi
               if [ "$found_contributor" = false ]; then
-                reminders="${reminders}- [ ] Add **${author_name}**$([ -n "$author_github" ] && echo " (@${author_github})") to [CONTRIBUTORS.md](CONTRIBUTORS.md)\n"
+                author_suffix=""
+                if [ -n "$author_github" ]; then
+                  author_suffix=" (@${author_github})"
+                fi
+                reminders="${reminders}- [ ] Add **${author_name}**${author_suffix} to [CONTRIBUTORS.md](CONTRIBUTORS.md)\n"
               fi
             fi
           done <<< "$CONTRIB_DIRS"
