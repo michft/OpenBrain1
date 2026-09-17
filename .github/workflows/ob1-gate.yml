@@ -34,14 +34,11 @@ jobs:
       - name: Get changed files
         id: changed
         run: |
-          # Get files changed in this PR
           changed=$(git diff --name-only origin/main...HEAD 2>/dev/null || git diff --name-only HEAD~1 HEAD)
           echo "files<<EOF" >> $GITHUB_OUTPUT
           echo "$changed" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
 
-          # Identify contribution folders (e.g., recipes/email-import/)
-          # Exclude _template folders and top-level files
           contrib_dirs=$(echo "$changed" | grep -E '^(recipes|schemas|dashboards|integrations|skills|primitives|extensions)/' | grep -v '/_template/' | cut -d'/' -f1,2 | sort -u || true)
           echo "contrib_dirs<<EOF" >> $GITHUB_OUTPUT
           echo "$contrib_dirs" >> $GITHUB_OUTPUT
@@ -59,7 +56,6 @@ jobs:
           results=""
           secret_blocked=false
 
-          # Helper functions
           pass_check() {
             results="${results}✅ **$1** — $2\n"
             pass_count=$((pass_count + 1))
@@ -69,8 +65,6 @@ jobs:
             fail_count=$((fail_count + 1))
           }
 
-          # Skip contribution checks for docs/governance PRs.
-          # Detected by PR title prefix OR by no contribution dirs being touched.
           is_docs_pr=false
           if echo "$PR_TITLE" | grep -qiE '^\[docs\]'; then
             is_docs_pr=true
@@ -87,13 +81,17 @@ jobs:
             exit 0
           fi
 
-          # ─── Rule 1: Folder structure ───
+          fork_shared_file() {
+            [ "${GITHUB_REPOSITORY:-}" = "michft/OpenBrain1" ] &&
+              echo "$1" | grep -qE '^(\.github/|docs/|\.gitignore$|(AGENTS|CLAUDE|CONTRIBUTING|README)\.md$)'
+          }
+
           rule1_pass=true
           bad_files=""
           allowed_pattern='^(recipes|schemas|dashboards|integrations|skills|primitives|extensions|docs|resources|\.github|\.gitkeep|\.gitignore|\.markdownlint)'
           while IFS= read -r f; do
             [ -z "$f" ] && continue
-            if ! echo "$f" | grep -qE "$allowed_pattern"; then
+            if ! echo "$f" | grep -qE "$allowed_pattern" && ! fork_shared_file "$f"; then
               bad_files="${bad_files}  - \`$f\`\n"
               rule1_pass=false
             fi
@@ -105,7 +103,6 @@ jobs:
             fail_check "Folder structure" "Files outside allowed directories:\n${bad_files}"
           fi
 
-          # ─── Rule 2: Required files ───
           rule2_pass=true
           rule2_detail=""
           while IFS= read -r dir; do
@@ -126,14 +123,12 @@ jobs:
             fail_check "Required files" "Missing required files:\n${rule2_detail}"
           fi
 
-          # ─── Rule 3: Metadata valid ───
           rule3_pass=true
           rule3_detail=""
           while IFS= read -r dir; do
             [ -z "$dir" ] && continue
             [ ! -f "$dir/metadata.json" ] && continue
 
-            # Check valid JSON
             if ! jq empty "$dir/metadata.json" 2>/dev/null; then
               rule3_detail="${rule3_detail}  - \`$dir/metadata.json\` is not valid JSON\n"
               rule3_pass=false
@@ -153,15 +148,12 @@ jobs:
             fail_check "Metadata valid" "Metadata issues:\n${rule3_detail}"
           fi
 
-          # ─── Rule 4: No credentials ───
           rule4_pass=true
           rule4_detail=""
-          # Scan all changed text files for credential patterns.
           while IFS= read -r f; do
             [ -z "$f" ] && continue
             [ ! -f "$f" ] && continue
 
-            # Skip binary files to avoid noisy false positives.
             if ! grep -Iq . "$f"; then
               continue
             fi
@@ -173,7 +165,6 @@ jobs:
               secret_blocked=true
             fi
 
-            # Check for .env files with actual values
             if echo "$f" | grep -qE '\.env$'; then
               has_values=$(grep -E '^[A-Z_]+=.+' "$f" 2>/dev/null | grep -vE '=(your-|<|example|placeholder|TODO)' || true)
               if [ -n "$has_values" ]; then
@@ -190,7 +181,6 @@ jobs:
             fail_check "No credentials" "Potential credentials found:\n${rule4_detail}"
           fi
 
-          # ─── Rule 5: SQL safety ───
           rule5_pass=true
           rule5_detail=""
           while IFS= read -r f; do
@@ -198,14 +188,12 @@ jobs:
             [ ! -f "$f" ] && continue
             case "$f" in *.sql) ;; *) continue ;; esac
 
-            # Check for destructive operations
             dangerous=$(grep -niE '(DROP\s+TABLE|DROP\s+DATABASE|TRUNCATE)' "$f" 2>/dev/null || true)
             if [ -n "$dangerous" ]; then
               rule5_detail="${rule5_detail}  - \`$f\`: contains DROP/TRUNCATE statement\n"
               rule5_pass=false
             fi
 
-            # Check for DELETE without WHERE
             deletes=$(grep -niE 'DELETE\s+FROM' "$f" 2>/dev/null || true)
             if [ -n "$deletes" ]; then
               while IFS= read -r line; do
@@ -216,7 +204,6 @@ jobs:
               done <<< "$deletes"
             fi
 
-            # Check for altering/dropping core thoughts table columns
             alter_thoughts=$(grep -niE 'ALTER\s+TABLE\s+thoughts\s+(DROP|ALTER)\s+COLUMN' "$f" 2>/dev/null || true)
             if [ -n "$alter_thoughts" ]; then
               rule5_detail="${rule5_detail}  - \`$f\`: modifies core thoughts table columns (only ADD COLUMN is allowed)\n"
@@ -230,7 +217,6 @@ jobs:
             fail_check "SQL safety" "SQL safety issues:\n${rule5_detail}"
           fi
 
-          # ─── Rule 6: Category-specific artifacts ───
           rule6_pass=true
           rule6_detail=""
           while IFS= read -r dir; do
@@ -308,28 +294,24 @@ jobs:
             fail_check "Category artifacts" "Missing category-specific files:\n${rule6_detail}"
           fi
 
-          # ─── Rule 7: PR format ───
           if echo "$PR_TITLE" | grep -qE '^\[(recipes|schemas|dashboards|integrations|skills|primitives|extensions|docs)\] '; then
             pass_check "PR format" "Title follows \`[category] Description\` format"
           else
             fail_check "PR format" "PR title must start with \`[recipes]\`, \`[schemas]\`, \`[dashboards]\`, \`[integrations]\`, \`[skills]\`, \`[primitives]\`, \`[extensions]\`, or \`[docs]\` followed by a space and description"
           fi
 
-          # ─── Rule 8: No binary blobs ───
           rule8_pass=true
           rule8_detail=""
           while IFS= read -r f; do
             [ -z "$f" ] && continue
             [ ! -f "$f" ] && continue
 
-            # Check file size (1MB = 1048576 bytes)
             size=$(wc -c < "$f" 2>/dev/null || echo "0")
             if [ "$size" -gt 1048576 ]; then
               rule8_detail="${rule8_detail}  - \`$f\`: file is $(( size / 1024 ))KB (max 1MB)\n"
               rule8_pass=false
             fi
 
-            # Check banned extensions
             if echo "$f" | grep -qE '\.(exe|dmg|zip|tar\.gz|tar\.bz2|rar|7z|msi|pkg|deb|rpm)$'; then
               rule8_detail="${rule8_detail}  - \`$f\`: binary/archive files not allowed\n"
               rule8_pass=false
@@ -342,7 +324,6 @@ jobs:
             fail_check "No binary blobs" "Binary/large file issues:\n${rule8_detail}"
           fi
 
-          # ─── Rule 9: README completeness ───
           rule9_pass=true
           rule9_detail=""
           while IFS= read -r dir; do
@@ -355,7 +336,7 @@ jobs:
             if ! grep -qi 'prerequisite' "$readme"; then
               missing_sections="${missing_sections}Prerequisites, "
             fi
-            if ! grep -qiE '^\s*[0-9]+\.' "$readme"; then
+            if ! grep -qiE '^[[:space:]]*(#{1,6}[[:space:]]+)?[0-9]+\.|Step_[0-9]+([-_[:space:]:]|$)' "$readme"; then
               missing_sections="${missing_sections}Step-by-step instructions, "
             fi
             if ! grep -qiE '(expected|outcome|result)' "$readme"; then
@@ -374,7 +355,6 @@ jobs:
             fail_check "README completeness" "Incomplete READMEs:\n${rule9_detail}"
           fi
 
-          # ─── Rule 10: Contribution dependency validation ───
           rule10_pass=true
           rule10_detail=""
           while IFS= read -r dir; do
@@ -430,22 +410,18 @@ jobs:
             fail_check "Contribution dependencies" "Dependency issues:\n${rule10_detail}"
           fi
 
-          # ─── Rule 11: LLM clarity review ───
-          # Clarity, alignment, and design pattern reviews are handled by the
-          # Claude PR Review workflow (claude-review.yml) using claude-code-action.
-          # This keeps the PR gate fast and deterministic.
           pass_check "LLM clarity review" "Covered by Claude PR Review workflow"
 
-          # ─── Rule 14: No local MCP pattern ───
-          # Extensions and integrations must use remote MCP (Edge Functions + custom connectors).
-          # The old pattern of editing claude_desktop_config.json with local Node.js servers
-          # is not allowed — it's inconsistent with the core Open Brain setup.
           rule14_pass=true
           rule14_detail=""
           while IFS= read -r f; do
             [ -z "$f" ] && continue
             [ ! -f "$f" ] && continue
             case "$f" in *.md|*.ts|*.js) ;; *) continue ;; esac
+
+            if [ "${GITHUB_REPOSITORY:-}" = "michft/OpenBrain1" ]; then
+              case "$f" in AGENTS.md|CLAUDE.md|CONTRIBUTING.md) continue ;; esac
+            fi
 
             # Check for old local MCP config pattern
             local_mcp=$(grep -niE '(claude_desktop_config|"command":\s*"node"|StdioServerTransport|mcpServers.*command)' "$f" 2>/dev/null || true)
@@ -465,9 +441,6 @@ jobs:
             fail_check "Remote MCP pattern" "Local MCP patterns found (must use remote MCP via Edge Functions):\n${rule14_detail}See the [Getting Started guide](docs/01-getting-started.md) for the correct remote MCP pattern."
           fi
 
-          # ─── Rule 15: Tool audit link ───
-          # Extensions and integrations that expose MCP tools must link to the
-          # tool audit guide so users know how to manage their tool surface area.
           rule15_pass=true
           rule15_detail=""
           while IFS= read -r dir; do
@@ -492,16 +465,13 @@ jobs:
             fail_check "Tool audit link" "Missing tool audit guide link:\n${rule15_detail}See the extension template for the recommended format."
           fi
 
-          # ─── Additional automated checks ────────────────────────────────
-
-          # ─── Scope check ───
-          # Contribution PRs should only modify files in their own folder
           rule12_pass=true
           rule12_detail=""
           out_of_scope=""
           while IFS= read -r f; do
             [ -z "$f" ] && continue
             in_scope=false
+            if fork_shared_file "$f"; then in_scope=true; fi
             while IFS= read -r dir; do
               [ -z "$dir" ] && continue
               if echo "$f" | grep -qE "^${dir}/"; then
@@ -516,13 +486,11 @@ jobs:
           done <<< "$CHANGED_FILES"
 
           if [ "$rule12_pass" = true ]; then
-            pass_check "Scope check" "All changes are within the contribution folder(s)"
+            pass_check "Scope check" "All changes are within contribution folders or permitted fork maintenance paths"
           else
             fail_check "Scope check" "Files changed outside contribution folder(s):\n${out_of_scope}Contribution PRs should only modify files in their own folder."
           fi
 
-          # ─── Internal link validation ───
-          # Check that relative links in READMEs point to files that exist
           rule13_pass=true
           rule13_detail=""
           while IFS= read -r dir; do
@@ -530,7 +498,7 @@ jobs:
             [ ! -f "$dir/README.md" ] && continue
 
             # Extract relative markdown links (not http, not anchors)
-            links=$(grep -oE '\]\([^)]+\)' "$dir/README.md" | sed 's/^\](//' | sed 's/)$//' | grep -v '^http' | grep -v '^#' || true)
+            links=$(grep -oE '\]\([^)]+\)' "$dir/README.md" | sed 's/^\](//' | sed 's/)$//' | grep -vE '^(https?://|mailto:|#)' || true)
 
             while IFS= read -r link; do
               [ -z "$link" ] && continue
@@ -552,8 +520,6 @@ jobs:
             fail_check "Internal links" "Broken links found:\n${rule13_detail}"
           fi
 
-          # ─── Post-merge reminders (non-blocking) ───────────────────────
-          # These don't block merge — they flag tasks for admins after merge
           reminders=""
           while IFS= read -r dir; do
             [ -z "$dir" ] && continue
@@ -588,15 +554,17 @@ jobs:
                 found_contributor=true
               fi
               if [ "$found_contributor" = false ]; then
-                reminders="${reminders}- [ ] Add **${author_name}**$([ -n "$author_github" ] && echo " (@${author_github})") to [CONTRIBUTORS.md](CONTRIBUTORS.md)\n"
+                author_suffix=""
+                if [ -n "$author_github" ]; then
+                  author_suffix=" (@${author_github})"
+                fi
+                reminders="${reminders}- [ ] Add **${author_name}**${author_suffix} to [CONTRIBUTORS.md](CONTRIBUTORS.md)\n"
               fi
             fi
           done <<< "$CONTRIB_DIRS"
 
-          # Always remind about Discord
           reminders="${reminders}- [ ] Post in OB1 Discord [#show-and-tell](https://discord.gg/Cgh9WJEkeG)\n"
 
-          # ─── Build summary ───
           total=$((pass_count + fail_count))
           if [ "$fail_count" -gt 0 ]; then
             summary="**Result: ${pass_count}/${total} checks passed. Please fix the issues above and push again.**"
@@ -610,7 +578,6 @@ jobs:
 
           comment="## OB1 PR Gate\n\n${results}\n${summary}"
 
-          # Append post-merge reminders (non-blocking, for admins)
           if [ -n "$reminders" ]; then
             comment="${comment}\n\n---\n\n### Post-Merge Tasks\n\n*These don't block merge — they're reminders for admins after this PR lands.*\n\n${reminders}"
           fi

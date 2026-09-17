@@ -239,6 +239,11 @@ The pyramid summaries are generated in the same LLM call as the thought extracti
 | `--verbose` | Print full thought text during processing | Off |
 | `--report FILE` | Write a markdown report of everything imported | None |
 | `--ingest-endpoint` | Use custom `INGEST_URL`/`INGEST_KEY` instead of Supabase direct insert | Off |
+| `--retain-transcript` | Include full source transcripts in endpoint metadata | Off |
+
+By default, ingestion stores distilled thoughts and provenance metadata only. Add
+`--retain-transcript` when the full conversation text is explicitly needed by the
+endpoint workflow.
 
 ### `--focus` — Topic Filtering
 

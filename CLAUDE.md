@@ -4,7 +4,7 @@ This file helps AI coding tools (Claude Code, Codex, Cursor, etc.) work effectiv
 
 ## What This Repo Is
 
-Open Brain is a persistent AI memory system — one database (Supabase + pgvector), one MCP protocol, any AI client. This repo contains the extensions, recipes, schemas, dashboards, integrations, and skills that the community builds on top of the core Open Brain setup.
+Open Brain is a persistent AI memory system — one Convex-backed database, one MCP protocol, any AI client. This repo contains the extensions, recipes, schemas, dashboards, integrations, and skills that the community builds on top of the core Open Brain setup. Legacy Supabase/Postgres paths remain in the repo for migration validation.
 
 **License:** FSL-1.1-MIT. No commercial derivative works. Keep this in mind when generating code or suggesting dependencies.
 
@@ -31,7 +31,7 @@ Every contribution lives in its own subfolder under the right category and must 
 - **No binary blobs** over 1MB. No `.exe`, `.dmg`, `.zip`, `.tar.gz`.
 - **No `DROP TABLE`, `DROP DATABASE`, `TRUNCATE`, or unqualified `DELETE FROM`** in SQL files.
 - **Avoid profanity in all content.** Keep docs, examples, seed data, UI copy, prompts, walkthroughs, and generated assets clean and professional.
-- **MCP servers must be remote (Supabase Edge Functions), not local.** Never use `claude_desktop_config.json`, `StdioServerTransport`, or local Node.js servers. All extensions deploy as Edge Functions and connect via Claude Desktop's custom connectors UI (Settings → Connectors → Add custom connector → paste URL). See `docs/01-getting-started.md` Step 7 for the pattern.
+- **MCP servers must be remote HTTP endpoints, not local stdio servers.** New work should use Convex HTTP actions by default. Legacy Supabase Edge Functions may still be used only when validating old methods. Never use `claude_desktop_config.json`, `StdioServerTransport`, or local Node.js servers for the default contribution path.
 
 ## PR Standards
 
