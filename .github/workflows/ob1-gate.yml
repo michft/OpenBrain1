@@ -87,7 +87,7 @@ jobs:
             exit 0
           fi
 
-          # ─── Rule 1: Folder structure ───
+          # Rule 1: Folder structure
           rule1_pass=true
           bad_files=""
           allowed_pattern='^(recipes|schemas|dashboards|integrations|skills|primitives|extensions|docs|resources|\.github|\.gitkeep|\.gitignore|\.markdownlint)'
@@ -105,7 +105,7 @@ jobs:
             fail_check "Folder structure" "Files outside allowed directories:\n${bad_files}"
           fi
 
-          # ─── Rule 2: Required files ───
+          # Rule 2: Required files
           rule2_pass=true
           rule2_detail=""
           while IFS= read -r dir; do
@@ -126,7 +126,7 @@ jobs:
             fail_check "Required files" "Missing required files:\n${rule2_detail}"
           fi
 
-          # ─── Rule 3: Metadata valid ───
+          # Rule 3: Metadata valid
           rule3_pass=true
           rule3_detail=""
           while IFS= read -r dir; do
@@ -153,7 +153,7 @@ jobs:
             fail_check "Metadata valid" "Metadata issues:\n${rule3_detail}"
           fi
 
-          # ─── Rule 4: No credentials ───
+          # Rule 4: No credentials
           rule4_pass=true
           rule4_detail=""
           # Scan all changed text files for credential patterns.
@@ -190,7 +190,7 @@ jobs:
             fail_check "No credentials" "Potential credentials found:\n${rule4_detail}"
           fi
 
-          # ─── Rule 5: SQL safety ───
+          # Rule 5: SQL safety
           rule5_pass=true
           rule5_detail=""
           while IFS= read -r f; do
@@ -230,7 +230,7 @@ jobs:
             fail_check "SQL safety" "SQL safety issues:\n${rule5_detail}"
           fi
 
-          # ─── Rule 6: Category-specific artifacts ───
+          # Rule 6: Category-specific artifacts
           rule6_pass=true
           rule6_detail=""
           while IFS= read -r dir; do
@@ -308,14 +308,14 @@ jobs:
             fail_check "Category artifacts" "Missing category-specific files:\n${rule6_detail}"
           fi
 
-          # ─── Rule 7: PR format ───
+          # Rule 7: PR format
           if echo "$PR_TITLE" | grep -qE '^\[(recipes|schemas|dashboards|integrations|skills|primitives|extensions|docs)\] '; then
             pass_check "PR format" "Title follows \`[category] Description\` format"
           else
             fail_check "PR format" "PR title must start with \`[recipes]\`, \`[schemas]\`, \`[dashboards]\`, \`[integrations]\`, \`[skills]\`, \`[primitives]\`, \`[extensions]\`, or \`[docs]\` followed by a space and description"
           fi
 
-          # ─── Rule 8: No binary blobs ───
+          # Rule 8: No binary blobs
           rule8_pass=true
           rule8_detail=""
           while IFS= read -r f; do
@@ -342,7 +342,7 @@ jobs:
             fail_check "No binary blobs" "Binary/large file issues:\n${rule8_detail}"
           fi
 
-          # ─── Rule 9: README completeness ───
+          # Rule 9: README completeness
           rule9_pass=true
           rule9_detail=""
           while IFS= read -r dir; do
@@ -374,7 +374,7 @@ jobs:
             fail_check "README completeness" "Incomplete READMEs:\n${rule9_detail}"
           fi
 
-          # ─── Rule 10: Contribution dependency validation ───
+          # Rule 10: Contribution dependency validation
           rule10_pass=true
           rule10_detail=""
           while IFS= read -r dir; do
@@ -430,13 +430,13 @@ jobs:
             fail_check "Contribution dependencies" "Dependency issues:\n${rule10_detail}"
           fi
 
-          # ─── Rule 11: LLM clarity review ───
+          # Rule 11: LLM clarity review
           # Clarity, alignment, and design pattern reviews are handled by the
           # Claude PR Review workflow (claude-review.yml) using claude-code-action.
           # This keeps the PR gate fast and deterministic.
           pass_check "LLM clarity review" "Covered by Claude PR Review workflow"
 
-          # ─── Rule 14: No local MCP pattern ───
+          # Rule 14: No local MCP pattern
           # Extensions and integrations must use remote MCP (Edge Functions + custom connectors).
           # The old pattern of editing claude_desktop_config.json with local Node.js servers
           # is not allowed — it's inconsistent with the core Open Brain setup.
@@ -465,7 +465,7 @@ jobs:
             fail_check "Remote MCP pattern" "Local MCP patterns found (must use remote MCP via Edge Functions):\n${rule14_detail}See the [Getting Started guide](docs/01-getting-started.md) for the correct remote MCP pattern."
           fi
 
-          # ─── Rule 15: Tool audit link ───
+          # Rule 15: Tool audit link
           # Extensions and integrations that expose MCP tools must link to the
           # tool audit guide so users know how to manage their tool surface area.
           rule15_pass=true
@@ -492,9 +492,8 @@ jobs:
             fail_check "Tool audit link" "Missing tool audit guide link:\n${rule15_detail}See the extension template for the recommended format."
           fi
 
-          # ─── Additional automated checks ────────────────────────────────
-
-          # ─── Scope check ───
+          # Additional automated checks
+          # Scope check
           # Contribution PRs should only modify files in their own folder
           rule12_pass=true
           rule12_detail=""
@@ -521,7 +520,7 @@ jobs:
             fail_check "Scope check" "Files changed outside contribution folder(s):\n${out_of_scope}Contribution PRs should only modify files in their own folder."
           fi
 
-          # ─── Internal link validation ───
+          # Internal link validation
           # Check that relative links in READMEs point to files that exist
           rule13_pass=true
           rule13_detail=""
@@ -552,7 +551,7 @@ jobs:
             fail_check "Internal links" "Broken links found:\n${rule13_detail}"
           fi
 
-          # ─── Post-merge reminders (non-blocking) ───────────────────────
+          # Post-merge reminders (non-blocking)
           # These don't block merge — they flag tasks for admins after merge
           reminders=""
           while IFS= read -r dir; do
@@ -596,7 +595,7 @@ jobs:
           # Always remind about Discord
           reminders="${reminders}- [ ] Post in OB1 Discord [#show-and-tell](https://discord.gg/Cgh9WJEkeG)\n"
 
-          # ─── Build summary ───
+          # Build summary
           total=$((pass_count + fail_count))
           if [ "$fail_count" -gt 0 ]; then
             summary="**Result: ${pass_count}/${total} checks passed. Please fix the issues above and push again.**"

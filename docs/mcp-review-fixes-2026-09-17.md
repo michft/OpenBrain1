@@ -54,6 +54,6 @@ Parent review additionally guards duplicate detection against stale stored finge
 
 PR [#2](https://github.com/michft/OpenBrain1/pull/2) at `7672b495` passed Convex MCP checks but failed [Markdown lint](https://github.com/michft/OpenBrain1/actions/runs/35183961927) with 41 issues in six files. Review fixes covered three of those files; remaining blank lines, separate dashboard callouts, and generated table formatting are now corrected. The complete tracked Markdown set passes locally.
 
-A separate `ob1-gate.yml` failure record for the old push has no jobs, check runs, or logs; its YAML parses and declares only a pull-request trigger. No cause was confirmed, and the gate was not weakened or altered. Fresh remote results must be checked after pushing these fixes.
+After pushing the review fixes, Markdown lint passed on GitHub. The separate [gate startup failure](https://github.com/michft/OpenBrain1/actions/runs/35192022056) exposes a workflow annotation: the embedded run script exceeds the 21,000-byte expression limit (21,049 UTF-8 bytes despite only 20,715 characters). Decorative comment separators were shortened to fit the limit. Check logic and enforcement remain unchanged; the previous jobless failure was a workflow validation error, not a completed gate review.
 
 Linear NAT-833 remains unavailable through the configured account (previous lookup returned `Entity not found`); this document records the implementation checkpoint.
