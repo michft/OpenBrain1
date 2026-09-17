@@ -156,6 +156,14 @@ node --env-file=.env.local smoke/live-smoke.mjs
 
 Set `CONVEX_SITE_URL` and `MCP_ACCESS_KEY` locally, or supply `OB1_CONVEX_URL` and `OB1_CONVEX_KEY` through your secret manager. Success requires rejected unauthorized/direct-Convex requests, a complete SDK handshake, and capture → semantic search → fetch with cleanup. `401` indicates a missing or mismatched deployed credential; local environment values alone are insufficient.
 
+Check the Agent Memory listing and review boundaries without creating or editing records:
+
+```bash
+node --env-file=.env.local smoke/memory-smoke.mjs
+```
+
+This check requires distinct `MCP_ACCESS_KEY` and `MCP_ADMIN_KEY`. Set `OB1_AGENT_MEMORY_WORKSPACE_ID` (default `ob1-staging`) and optionally `OB1_AGENT_MEMORY_PROJECT_ID` to select existing data. It reads at most two pages per listing, checks invalid limits/IDs, and verifies rejected review requests. Empty workspaces cannot exercise cursor continuation or record-state comparisons; the output reports that limitation. Audit-table invariants are covered by deterministic tests, not the public HTTP check.
+
 For a custom HTTP domain, also set `CONVEX_URL` to its `.convex.cloud` API URL so the direct-access check runs. Set `OPEN_BRAIN_CITATION_BASE_URL` to your dashboard's thought URL root, or the protected REST root `https://YOUR_DEPLOYMENT.convex.site/thought`; REST citation links require authentication.
 
 Legacy Supabase path still works for comparison:
