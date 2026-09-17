@@ -1,0 +1,18 @@
+{
+  "name": "Convex Open Brain Backend",
+  "description": "Convex-backed Open Brain runtime with REST, MCP, Agent Memory, vector search, and OpenRouter-compatible enrichment.",
+  "category": "integrations",
+  "author": {
+    "name": "Nate B. Jones / OB1",
+    "github": "NateBJones-Projects"
+  },
+  "version": "0.1.0",
+  "requires": {
+    "open_brain": true,
+    "services": ["Convex", "OpenRouter"],
+    "tools": ["Node.js 24+", "pnpm", "remote HTTP client"]
+  },
+  "tags": ["convex", "mcp", "agent-memory", "vector-search", "http"],
+  "difficulty": "advanced",
+  "estimated_time": "30 minutes"
+}

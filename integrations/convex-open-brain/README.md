@@ -26,6 +26,25 @@ This integration replaces the default Supabase/Postgres storage layer with Conve
 
 Convex is the product backend going forward; Supabase is now a legacy compatibility path.
 
+## Prerequisites
+
+- Node.js 24+
+- pnpm
+- A Convex deployment
+- An OpenRouter API key for embeddings and metadata classification
+- A remote HTTP client for calling the deployed REST, MCP, or Agent Memory endpoints
+
+## Quickstart
+
+1. Copy the environment template as described in [Environment](#environment).
+2. Run the local checks in [Development Deployment](#development-deployment): `pnpm install`, `pnpm test`, and `pnpm typecheck`.
+3. Configure the development deployment secrets and run the one-shot Convex push described in [Development Deployment](#development-deployment).
+4. Verify the authenticated HTTP and MCP surfaces using [Validation](#validation) and the endpoint table below.
+
+Expected outcome: a configured Convex deployment exposes authenticated REST, MCP, and Agent Memory endpoints, with vector embeddings and metadata enrichment supplied by OpenRouter.
+
+For guidance on keeping the MCP surface focused and reviewing tool overhead, see the [tool audit guide](../../docs/05-tool-audit.md).
+
 ## Endpoints
 
 Use your Convex HTTP actions URL from the Convex dashboard:

@@ -58,4 +58,20 @@ After pushing the review fixes, Markdown lint passed on GitHub. The separate [ga
 
 At `a363903b`, Markdown lint and Convex checks both passed. The gate then reached its script but exited before producing an artifact: an optional author suffix used a command substitution returning status 1 when no GitHub handle was present. Under `bash -e`, the enclosing assignment stopped execution. The suffix now uses an explicit conditional, verified with the empty-handle case; validation rules remain unchanged.
 
+### Fork Maintenance Policy and Gate Completion
+
+At `281589fc`, the gate ran all rules and reported 8/15 passing. Remaining failures were contribution-only scope restrictions, missing Convex metadata/setup sections, and scanner false positives for numbered headings/badges, policy documents, and `mailto:` links.
+
+The user confirmed that this migration targets `michft/OpenBrain1` only, with no upstream contribution. The gate now permits accompanying `.github/`, `docs/`, `.gitignore`, and four named root Markdown files only when `GITHUB_REPOSITORY` is `michft/OpenBrain1`. The three root agent/contribution policy documents are excluded from the local MCP pattern scan; contribution code and guides remain scanned. Credential, SQL, schema, and other contribution checks remain active. `CONTRIBUTING.md` documents this fork policy.
+
+Added Convex metadata, prerequisites, numbered quickstart, and tool audit link. Step detection accepts numbered headings and existing step badges; link validation ignores email links while retaining relative-file checks. Removed nonsemantic script comments to keep the embedded run block below GitHub's expression limit (19,231 UTF-8 bytes; escaped estimate 19,595).
+
+Validation before push:
+
+- Extracted gate script under `bash -e` against the complete PR diff: **15/15 passed**, with no credential flag.
+- Six fork boundary cases: permitted maintenance paths accepted for michft; unrelated paths and upstream exceptions rejected.
+- Metadata passed `uvx check-jsonschema --schemafile .github/metadata.schema.json`.
+- All 204 tracked Markdown files passed lint; workflow YAML and whitespace checks passed.
+- Runtime code is unchanged by this final gate correction; the earlier 47 Convex tests and four importer tests remain the relevant runtime validation.
+
 Linear NAT-833 remains unavailable through the configured account (previous lookup returned `Entity not found`); this document records the implementation checkpoint.

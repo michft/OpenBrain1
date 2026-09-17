@@ -284,6 +284,12 @@ Non-code contributions count at every level. Testing recipes, mentoring non-tech
 
 Every PR is checked against these rules. All must pass before human review.
 
+### michft fork maintenance
+
+In `michft/OpenBrain1`, repo-wide maintenance PRs may include accompanying changes in `.github/`, `docs/`, `.gitignore`, and root `AGENTS.md`, `CLAUDE.md`, `CONTRIBUTING.md`, and `README.md`. The gate permits these paths alongside contribution folders. Root agent and contribution policy documents are excluded from the local MCP pattern scan because they describe prohibited patterns; contribution code and guides remain scanned. Credential, SQL, metadata, and other contribution checks still apply. These exceptions apply only to this fork; this work is not submitted upstream.
+
+### Contribution checks
+
 1. **Folder structure** — Contribution is in the correct category directory (`recipes/`, `schemas/`, `dashboards/`, `integrations/`, `skills/`, `primitives/`, `extensions/`)
 2. **Required files** — Both `README.md` and `metadata.json` exist in the contribution folder
 3. **Metadata valid** — `metadata.json` parses as valid JSON and passes the repo JSON Schema
