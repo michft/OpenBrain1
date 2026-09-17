@@ -1,0 +1,35 @@
+name: Convex MCP checks
+
+on:
+  pull_request:
+    paths:
+      - "integrations/convex-open-brain/**"
+      - ".github/workflows/convex-mcp.yml"
+  push:
+    branches: [main, conv]
+    paths:
+      - "integrations/convex-open-brain/**"
+      - ".github/workflows/convex-mcp.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: integrations/convex-open-brain
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12.3.4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: integrations/convex-open-brain/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+      - run: pnpm test

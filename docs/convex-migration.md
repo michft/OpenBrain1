@@ -18,6 +18,7 @@ Required `.env.local` values:
 CONVEX_DEPLOYMENT=dev:your-deployment
 NEXT_PUBLIC_CONVEX_URL=https://your-deployment.convex.cloud
 MCP_ACCESS_KEY=your-generated-access-key
+MCP_ADMIN_KEY=a-different-generated-admin-key
 OPENROUTER_API_KEY=sk-or-v1-...
 ```
 
@@ -47,6 +48,12 @@ OB1_API_KEY=your-generated-access-key
 | OpenRouter embeddings/classification | unchanged |
 | Python direct Supabase inserts | HTTP `/capture` with `OB1_API_URL` and `OB1_API_KEY` |
 | MCP Streamable HTTP endpoint | Convex `/mcp` JSON-RPC tool endpoint |
+
+## Authentication and Deployment
+
+All Convex database functions are internal; clients use authenticated HTTP endpoints. Agent clients use `MCP_ACCESS_KEY`. Human review and trusted Agent Memory imports use a separate `MCP_ADMIN_KEY` in the same bearer or `x-brain-key` header. Existing review clients must switch to that admin credential. Untrusted write-back remains pending/evidence-only even when a caller claims confirmed provenance.
+
+Local environment files do not set deployed secrets. Follow the [development deployment instructions](../integrations/convex-open-brain/README.md#development-deployment), then run the SDK-backed live smoke check before selecting a production target. The six MCP tools expose thoughts; Agent Memory keeps its separate REST contract.
 
 ## Legacy Validation
 

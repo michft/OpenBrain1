@@ -1,7 +1,7 @@
 import { httpRouter } from "convex/server";
 import type { FunctionArgs } from "convex/server";
 import { httpAction } from "./_generated/server";
-import { api } from "./_generated/api";
+import { internal } from "./_generated/api";
 import { thoughtTitle, thoughtUrl } from "./lib/format";
 import type { PublicThought } from "./lib/format";
 
@@ -16,16 +16,23 @@ const corsHeaders = {
 type HttpCtx = Parameters<Parameters<typeof httpAction>[0]>[0];
 
 type JsonRpcRequest = {
-  jsonrpc?: string;
+  jsonrpc: "2.0";
   id?: string | number | null;
-  method?: string;
-  params?: Record<string, unknown>;
+  method: string;
+  params?: unknown;
 };
 
 type ToolCall = {
-  name?: string;
-  arguments?: Record<string, unknown>;
+  name?: unknown;
+  arguments?: unknown;
 };
+
+type JsonRpcId = string | number | null;
+type JsonRpcResponse =
+  | { jsonrpc: "2.0"; id: JsonRpcId; result: unknown }
+  | { jsonrpc: "2.0"; id: JsonRpcId; error: { code: number; message: string } };
+
+type AuthResult = { authorized: boolean; admin: boolean };
 
 type ThoughtSearchResult = PublicThought & Record<string, unknown>;
 
@@ -46,13 +53,13 @@ type ListThoughtsResponse = {
   per_page: number;
 };
 
-type CaptureThoughtArgs = FunctionArgs<typeof api.brain.captureThought>;
-type TextSearchArgs = FunctionArgs<typeof api.brain.textSearch>;
-type SemanticSearchArgs = FunctionArgs<typeof api.brain.semanticSearch>;
-type RecallArgs = FunctionArgs<typeof api.agentMemory.recall>;
-type WritebackArgs = FunctionArgs<typeof api.agentMemory.writeback>;
-type ReportUsageArgs = FunctionArgs<typeof api.agentMemory.reportUsage>;
-type ReviewMemoryArgs = FunctionArgs<typeof api.agentMemory.reviewMemory>;
+type CaptureThoughtArgs = FunctionArgs<typeof internal.brain.captureThought>;
+type TextSearchArgs = FunctionArgs<typeof internal.brain.textSearch>;
+type SemanticSearchArgs = FunctionArgs<typeof internal.brain.semanticSearch>;
+type RecallArgs = FunctionArgs<typeof internal.agentMemory.recall>;
+type WritebackArgs = FunctionArgs<typeof internal.agentMemory.writeback>;
+type ReportUsageArgs = FunctionArgs<typeof internal.agentMemory.reportUsage>;
+type ReviewMemoryArgs = FunctionArgs<typeof internal.agentMemory.reviewMemory>;
 
 function json(data: unknown, status = 200): Response {
   return new Response(JSON.stringify(data), {
@@ -69,11 +76,26 @@ function unauthorized(): Response {
   return json({ error: "Invalid or missing access key" }, 401);
 }
 
-function auth(request: Request): boolean {
-  const expected = process.env.MCP_ACCESS_KEY;
+function auth(request: Request): AuthResult {
+  const accessKey = process.env.MCP_ACCESS_KEY;
+  const adminKey = process.env.MCP_ADMIN_KEY;
   const url = new URL(request.url);
-  const provided = request.headers.get("x-brain-key") || url.searchParams.get("key");
-  return Boolean(expected && provided && provided === expected);
+  const authorization = request.headers.get("authorization");
+  const bearer = authorization?.match(/^Bearer\s+(.+)$/i)?.[1];
+  const provided = request.headers.get("x-brain-key") || bearer || url.searchParams.get("key");
+  const agent = Boolean(accessKey && provided && provided === accessKey);
+  const admin = Boolean(adminKey && provided && provided === adminKey && adminKey !== accessKey);
+  return { authorized: agent || admin, admin };
+}
+
+function originAllowed(request: Request): boolean {
+  const origin = request.headers.get("origin");
+  if (!origin) return true;
+  const allowed = (process.env.MCP_ALLOWED_ORIGINS || "")
+    .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean);
+  return origin === new URL(request.url).origin || allowed.includes(origin);
 }
 
 async function readBody(request: Request): Promise<Record<string, unknown>> {
@@ -87,22 +109,22 @@ function numberParam(url: URL, key: string, fallback: number): number {
 
 async function restHandler(ctx: HttpCtx, request: Request): Promise<Response> {
   if (request.method === "OPTIONS") return empty();
-  if (!auth(request)) return unauthorized();
+  if (!auth(request).authorized) return unauthorized();
   const url = new URL(request.url);
   const path = url.pathname.replace(/^\/open-brain-rest/, "") || "/";
 
   try {
     if (request.method === "GET" && path === "/health") {
-      return json(await ctx.runQuery(api.brain.health, {}));
+      return json(await ctx.runQuery(internal.brain.health, {}));
     }
     if (request.method === "GET" && path === "/stats") {
-      return json(await ctx.runQuery(api.brain.stats, {
+      return json(await ctx.runQuery(internal.brain.stats, {
         days: url.searchParams.has("days") ? numberParam(url, "days", 0) : undefined,
         exclude_restricted: url.searchParams.get("exclude_restricted") !== "false",
       }));
     }
     if (request.method === "GET" && path === "/thoughts") {
-      return json(await ctx.runQuery(api.brain.listThoughts, {
+      return json(await ctx.runQuery(internal.brain.listThoughts, {
         page: numberParam(url, "page", 1),
         per_page: numberParam(url, "per_page", 25),
         type: url.searchParams.get("type") || undefined,
@@ -117,7 +139,7 @@ async function restHandler(ctx: HttpCtx, request: Request): Promise<Response> {
     }
     const thoughtMatch = path.match(/^\/thought\/([^/]+)$/);
     if (thoughtMatch && request.method === "GET") {
-      const result = await ctx.runQuery(api.brain.getThought, {
+      const result = await ctx.runQuery(internal.brain.getThought, {
         id: thoughtMatch[1],
         exclude_restricted: url.searchParams.get("exclude_restricted") !== "false",
       });
@@ -127,22 +149,22 @@ async function restHandler(ctx: HttpCtx, request: Request): Promise<Response> {
     }
     if (thoughtMatch && request.method === "PUT") {
       const body = await readBody(request);
-      return json(await ctx.runMutation(api.brain.updateThought, { id: thoughtMatch[1], ...body }));
+      return json(await ctx.runMutation(internal.brain.updateThought, { id: thoughtMatch[1], ...body }));
     }
     if (thoughtMatch && request.method === "DELETE") {
-      return json(await ctx.runMutation(api.brain.deleteThought, { id: thoughtMatch[1] }));
+      return json(await ctx.runMutation(internal.brain.deleteThought, { id: thoughtMatch[1] }));
     }
     if (request.method === "POST" && path === "/capture") {
-      return json(await ctx.runAction(api.brain.captureThought, (await readBody(request)) as CaptureThoughtArgs));
+      return json(await ctx.runAction(internal.brain.captureThought, (await readBody(request)) as CaptureThoughtArgs));
     }
     if (request.method === "POST" && path === "/search") {
       const body = await readBody(request);
       const mode = typeof body.mode === "string" ? body.mode : "semantic";
-      if (mode === "text") return json(await ctx.runQuery(api.brain.textSearch, body as TextSearchArgs));
-      return json(await ctx.runAction(api.brain.semanticSearch, body as SemanticSearchArgs));
+      if (mode === "text") return json(await ctx.runQuery(internal.brain.textSearch, body as TextSearchArgs));
+      return json(await ctx.runAction(internal.brain.semanticSearch, body as SemanticSearchArgs));
     }
     if (request.method === "GET" && path === "/duplicates") {
-      return json(await ctx.runQuery(api.brain.duplicates, {
+      return json(await ctx.runQuery(internal.brain.duplicates, {
         threshold: numberParam(url, "threshold", 0.85),
         limit: numberParam(url, "limit", 50),
         offset: numberParam(url, "offset", 0),
@@ -150,10 +172,10 @@ async function restHandler(ctx: HttpCtx, request: Request): Promise<Response> {
     }
     const reflectionMatch = path.match(/^\/thought\/([^/]+)\/reflection$/);
     if (reflectionMatch && request.method === "GET") {
-      return json(await ctx.runQuery(api.brain.reflections, { thoughtId: reflectionMatch[1] }));
+      return json(await ctx.runQuery(internal.brain.reflections, { thoughtId: reflectionMatch[1] }));
     }
     if (reflectionMatch && request.method === "POST") {
-      return json(await ctx.runMutation(api.brain.addReflection, { thoughtId: reflectionMatch[1], ...(await readBody(request)) }));
+      return json(await ctx.runMutation(internal.brain.addReflection, { thoughtId: reflectionMatch[1], ...(await readBody(request)) }));
     }
     const connectionsMatch = path.match(/^\/thought\/([^/]+)\/connections$/);
     if (connectionsMatch && request.method === "GET") {
@@ -164,7 +186,7 @@ async function restHandler(ctx: HttpCtx, request: Request): Promise<Response> {
       const body = await readBody(request);
       const text = typeof body.text === "string" ? body.text.trim() : "";
       if (!text) return json({ error: "text is required" }, 400);
-      const result = await ctx.runAction(api.brain.captureThought, { content: text, source_type: "dashboard_ingest" });
+      const result = await ctx.runAction(internal.brain.captureThought, { content: text, source_type: "dashboard_ingest" });
       return json({ job_id: 0, status: "complete", extracted_count: 1, thought_id: result.thought_id });
     }
     return json({ error: "Not found" }, 404);
@@ -175,7 +197,8 @@ async function restHandler(ctx: HttpCtx, request: Request): Promise<Response> {
 
 async function agentMemoryHandler(ctx: HttpCtx, request: Request): Promise<Response> {
   if (request.method === "OPTIONS") return empty();
-  if (!auth(request)) return unauthorized();
+  const access = auth(request);
+  if (!access.authorized) return unauthorized();
   const url = new URL(request.url);
   const path = url.pathname.replace(/^\/agent-memory-api/, "") || "/";
 
@@ -184,21 +207,22 @@ async function agentMemoryHandler(ctx: HttpCtx, request: Request): Promise<Respo
       return json({ ok: true, service: "agent-memory-api", backend: "convex", version: "0.1.0" });
     }
     if (request.method === "POST" && path === "/recall") {
-      return json(await ctx.runAction(api.agentMemory.recall, (await readBody(request)) as RecallArgs));
+      return json(await ctx.runAction(internal.agentMemory.recall, (await readBody(request)) as RecallArgs));
     }
     if (request.method === "POST" && path === "/writeback") {
-      const result = await ctx.runAction(api.agentMemory.writeback, (await readBody(request)) as WritebackArgs);
+      const body = await readBody(request);
+      const result = await ctx.runAction(internal.agentMemory.writeback, { ...body, trusted_writeback: access.admin } as WritebackArgs);
       if ("error" in result) return json(result, 422);
       return json(result);
     }
     const usageMatch = path.match(/^\/recall\/([^/]+)\/usage$/);
     if (usageMatch && request.method === "POST") {
-      return json(await ctx.runMutation(api.agentMemory.reportUsage, { request_id: usageMatch[1], ...(await readBody(request)) } as ReportUsageArgs));
+      return json(await ctx.runMutation(internal.agentMemory.reportUsage, { request_id: usageMatch[1], ...(await readBody(request)) } as ReportUsageArgs));
     }
     if (request.method === "GET" && path === "/memories/review") {
       const workspaceId = url.searchParams.get("workspace_id");
       if (!workspaceId) return json({ error: "workspace_id is required" }, 400);
-      return json(await ctx.runQuery(api.agentMemory.reviewQueue, {
+      return json(await ctx.runQuery(internal.agentMemory.reviewQueue, {
         workspace_id: workspaceId,
         project_id: url.searchParams.get("project_id") || undefined,
       }));
@@ -206,7 +230,7 @@ async function agentMemoryHandler(ctx: HttpCtx, request: Request): Promise<Respo
     if (request.method === "GET" && path === "/memories") {
       const workspaceId = url.searchParams.get("workspace_id");
       if (!workspaceId) return json({ error: "workspace_id is required" }, 400);
-      return json(await ctx.runQuery(api.agentMemory.memories, {
+      return json(await ctx.runQuery(internal.agentMemory.memories, {
         workspace_id: workspaceId,
         project_id: url.searchParams.get("project_id") || undefined,
         review_status: url.searchParams.get("review_status") || undefined,
@@ -219,17 +243,18 @@ async function agentMemoryHandler(ctx: HttpCtx, request: Request): Promise<Respo
     }
     const memoryReviewMatch = path.match(/^\/memories\/([^/]+)\/review$/);
     if (memoryReviewMatch && request.method === "PATCH") {
-      return json(await ctx.runMutation(api.agentMemory.reviewMemory, { id: memoryReviewMatch[1], ...(await readBody(request)) } as ReviewMemoryArgs));
+      if (!access.admin) return json({ error: "Admin access required" }, 403);
+      return json(await ctx.runMutation(internal.agentMemory.reviewMemory, { id: memoryReviewMatch[1], ...(await readBody(request)) } as ReviewMemoryArgs));
     }
     const memoryMatch = path.match(/^\/memories\/([^/]+)$/);
     if (memoryMatch && request.method === "GET") {
-      const result = await ctx.runQuery(api.agentMemory.memory, { id: memoryMatch[1] });
+      const result = await ctx.runQuery(internal.agentMemory.memory, { id: memoryMatch[1] });
       if (!result) return json({ error: "Memory not found" }, 404);
       return json(result);
     }
     const traceMatch = path.match(/^\/recall-traces\/([^/]+)$/);
     if (traceMatch && request.method === "GET") {
-      const result = await ctx.runQuery(api.agentMemory.recallTrace, { request_id: traceMatch[1] });
+      const result = await ctx.runQuery(internal.agentMemory.recallTrace, { request_id: traceMatch[1] });
       if (!result) return json({ error: "Recall trace not found" }, 404);
       return json(result);
     }
@@ -239,114 +264,262 @@ async function agentMemoryHandler(ctx: HttpCtx, request: Request): Promise<Respo
   }
 }
 
-function mcpResult(id: JsonRpcRequest["id"], result: unknown): Response {
-  return json({ jsonrpc: "2.0", id: id ?? null, result });
+const MCP_PROTOCOL_VERSIONS = ["2025-11-25", "2025-06-18", "2025-03-26"] as const;
+
+const MCP_TOOLS = [
+  {
+    name: "search",
+    description: "Search Open Brain memories by meaning.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        query: { type: "string", minLength: 1 },
+        limit: { type: "integer", minimum: 1, maximum: 50 },
+        threshold: { type: "number", minimum: 0, maximum: 1 },
+      },
+      required: ["query"],
+    },
+  },
+  {
+    name: "fetch",
+    description: "Fetch one Open Brain thought by ID.",
+    inputSchema: { type: "object", properties: { id: { type: "string", minLength: 1 } }, required: ["id"] },
+  },
+  {
+    name: "search_thoughts",
+    description: "Search captured thoughts by meaning.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        query: { type: "string", minLength: 1 },
+        limit: { type: "integer", minimum: 1, maximum: 50 },
+        threshold: { type: "number", minimum: 0, maximum: 1 },
+      },
+      required: ["query"],
+    },
+  },
+  {
+    name: "list_thoughts",
+    description: "List recently captured thoughts.",
+    inputSchema: {
+      type: "object",
+      properties: { limit: { type: "integer", minimum: 1, maximum: 100 }, type: { type: "string", minLength: 1 } },
+    },
+  },
+  {
+    name: "thought_stats",
+    description: "Get captured thought statistics.",
+    inputSchema: { type: "object", properties: {} },
+  },
+  {
+    name: "capture_thought",
+    description: "Save a new thought to Open Brain.",
+    inputSchema: { type: "object", properties: { content: { type: "string", minLength: 1, maxLength: 15000 } }, required: ["content"] },
+  },
+] as const;
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function mcpError(id: JsonRpcRequest["id"], message: string, code = -32000): Response {
-  return json({ jsonrpc: "2.0", id: id ?? null, error: { code, message } });
+function isRpcId(value: unknown): value is JsonRpcId {
+  return value === null || typeof value === "string" || (typeof value === "number" && Number.isFinite(value));
 }
 
-async function mcpHandler(ctx: HttpCtx, request: Request): Promise<Response> {
-  if (request.method === "OPTIONS") return empty();
-  if (!auth(request)) return unauthorized();
-  if (request.method === "GET") {
-    return json({ status: "ok", service: "convex-open-brain-mcp", transport: "streamable-http-json" });
-  }
-  const rpc = (await request.json().catch(() => ({}))) as JsonRpcRequest;
+function rpcResult(id: JsonRpcId, result: unknown): JsonRpcResponse {
+  return { jsonrpc: "2.0", id, result };
+}
+
+function rpcError(id: JsonRpcId, message: string, code = -32000): JsonRpcResponse {
+  return { jsonrpc: "2.0", id, error: { code, message } };
+}
+
+function rpcResponse(response: JsonRpcResponse | JsonRpcResponse[], status = 200): Response {
+  return json(response, status);
+}
+
+function parseRpcRequest(value: unknown): JsonRpcRequest | null {
+  if (!isRecord(value) || value.jsonrpc !== "2.0" || typeof value.method !== "string" || value.method.trim() === "") return null;
+  if (Object.prototype.hasOwnProperty.call(value, "id") && !isRpcId(value.id)) return null;
+  return value as unknown as JsonRpcRequest;
+}
+
+function requestId(rpc: JsonRpcRequest): { id: JsonRpcId; notification: boolean } {
+  const notification = !Object.prototype.hasOwnProperty.call(rpc, "id");
+  return { id: notification ? null : (rpc.id ?? null), notification };
+}
+
+function requiredString(args: Record<string, unknown>, key: string, maxLength: number): string | null {
+  const value = args[key];
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  return trimmed.length > 0 && trimmed.length <= maxLength ? trimmed : null;
+}
+
+function boundedInteger(args: Record<string, unknown>, key: string, fallback: number, min: number, max: number): number | null {
+  const value = args[key];
+  if (value === undefined) return fallback;
+  return typeof value === "number" && Number.isInteger(value) && value >= min && value <= max ? value : null;
+}
+
+function boundedNumber(args: Record<string, unknown>, key: string, fallback: number, min: number, max: number): number | null {
+  const value = args[key];
+  if (value === undefined) return fallback;
+  return typeof value === "number" && Number.isFinite(value) && value >= min && value <= max ? value : null;
+}
+
+async function dispatchMcp(ctx: HttpCtx, rpc: JsonRpcRequest): Promise<JsonRpcResponse> {
+  const { id, notification } = requestId(rpc);
+
+  if (rpc.method === "notifications/initialized") return rpcResult(id, {});
+  if (rpc.method === "ping") return rpcResult(id, {});
   if (rpc.method === "initialize") {
-    return mcpResult(rpc.id, {
-      protocolVersion: "2025-03-26",
+    const params = rpc.params === undefined ? {} : rpc.params;
+    if (
+      !isRecord(params)
+      || typeof params.protocolVersion !== "string"
+      || params.protocolVersion.trim() === ""
+      || !isRecord(params.capabilities)
+      || !isRecord(params.clientInfo)
+      || typeof params.clientInfo.name !== "string"
+      || params.clientInfo.name.trim() === ""
+      || typeof params.clientInfo.version !== "string"
+      || params.clientInfo.version.trim() === ""
+    ) return rpcError(id, "initialize params require protocolVersion, capabilities, and clientInfo name/version", -32602);
+    const requested = params.protocolVersion;
+    const protocolVersion = requested && MCP_PROTOCOL_VERSIONS.includes(requested as (typeof MCP_PROTOCOL_VERSIONS)[number])
+      ? requested
+      : MCP_PROTOCOL_VERSIONS[0];
+    return rpcResult(id, {
+      protocolVersion,
       capabilities: { tools: {} },
       serverInfo: { name: "convex-open-brain", version: "0.1.0" },
     });
   }
   if (rpc.method === "tools/list") {
-    return mcpResult(rpc.id, {
-      tools: [
-        { name: "search", description: "Search Open Brain memories by meaning.", inputSchema: { type: "object", properties: { query: { type: "string" } }, required: ["query"] } },
-        { name: "fetch", description: "Fetch one Open Brain thought by ID.", inputSchema: { type: "object", properties: { id: { type: "string" } }, required: ["id"] } },
-        { name: "search_thoughts", description: "Search captured thoughts by meaning.", inputSchema: { type: "object", properties: { query: { type: "string" }, limit: { type: "number" }, threshold: { type: "number" } }, required: ["query"] } },
-        { name: "list_thoughts", description: "List recently captured thoughts.", inputSchema: { type: "object", properties: { limit: { type: "number" }, type: { type: "string" } } } },
-        { name: "thought_stats", description: "Get captured thought statistics.", inputSchema: { type: "object", properties: {} } },
-        { name: "capture_thought", description: "Save a new thought to Open Brain.", inputSchema: { type: "object", properties: { content: { type: "string" } }, required: ["content"] } },
-      ],
-    });
+    if (rpc.params !== undefined && !isRecord(rpc.params)) return rpcError(id, "tools/list params must be an object", -32602);
+    return rpcResult(id, { tools: MCP_TOOLS });
   }
-  if (rpc.method !== "tools/call") return mcpError(rpc.id, `Unsupported MCP method: ${rpc.method}`, -32601);
+  if (rpc.method !== "tools/call") return rpcError(id, `Unsupported MCP method: ${rpc.method}`, -32601);
+  if (notification) return rpcError(id, "tools/call requests require an id", -32600);
+  if (!isRecord(rpc.params)) return rpcError(id, "tools/call params must be an object", -32602);
 
-  const call = (rpc.params || {}) as ToolCall;
-  const args = call.arguments || {};
+  const call = rpc.params as ToolCall;
+  if (typeof call.name !== "string" || call.name.trim() === "") return rpcError(id, "Tool name is required", -32602);
+  if (call.arguments !== undefined && !isRecord(call.arguments)) return rpcError(id, "Tool arguments must be an object", -32602);
+  const args = (call.arguments as Record<string, unknown> | undefined) || {};
+
   try {
     if (call.name === "search" || call.name === "search_thoughts") {
-      const query = typeof args.query === "string" ? args.query : "";
-      const result: SemanticSearchResponse = await ctx.runAction(api.brain.semanticSearch, {
+      const query = requiredString(args, "query", 2000);
+      const limit = boundedInteger(args, "limit", 10, 1, 50);
+      const threshold = boundedNumber(args, "threshold", 0.5, 0, 1);
+      if (!query) return rpcError(id, "query must be a non-empty string of at most 2000 characters", -32602);
+      if (limit === null) return rpcError(id, "limit must be an integer between 1 and 50", -32602);
+      if (threshold === null) return rpcError(id, "threshold must be a number between 0 and 1", -32602);
+      const result: SemanticSearchResponse = await ctx.runAction(internal.brain.semanticSearch, {
         query,
-        limit: typeof args.limit === "number" ? args.limit : 10,
-        threshold: typeof args.threshold === "number" ? args.threshold : 0.5,
+        limit,
+        threshold,
         exclude_restricted: true,
       });
       if (call.name === "search") {
-        return mcpResult(rpc.id, {
-          content: [{
-            type: "text",
-            text: JSON.stringify({
-              results: result.results.map((thought: ThoughtSearchResult) => ({
-                id: thought.id,
-                title: thoughtTitle(thought.content, thought.created_at),
-                url: thoughtUrl(thought.id),
-              })),
-            }),
-          }],
+        return rpcResult(id, {
+          content: [{ type: "text", text: JSON.stringify({ results: result.results.map((thought: ThoughtSearchResult) => ({
+            id: thought.id,
+            title: thoughtTitle(thought.content, thought.created_at),
+            url: thoughtUrl(thought.id),
+          })) }) }],
         });
       }
       const text = result.results.map((thought: ThoughtSearchResult, index: number) => {
         const topics = Array.isArray(thought.metadata.topics) ? `\nTopics: ${thought.metadata.topics.join(", ")}` : "";
         return `--- Result ${index + 1} (${Math.round(Number(thought.similarity || 0) * 100)}% match) ---\nCaptured: ${new Date(thought.created_at).toLocaleDateString()}\nType: ${thought.type}${topics}\n\n${thought.content}`;
       }).join("\n\n");
-      return mcpResult(rpc.id, { content: [{ type: "text", text: text || `No thoughts found matching "${query}".` }] });
+      return rpcResult(id, { content: [{ type: "text", text: text || `No thoughts found matching "${query}".` }] });
     }
     if (call.name === "fetch") {
-      const id = typeof args.id === "string" ? args.id : "";
-      const thought = await ctx.runQuery(api.brain.getThought, { id, exclude_restricted: true });
-      if (!thought || "restricted" in thought) return mcpError(rpc.id, "Thought not found", -32602);
-      return mcpResult(rpc.id, {
-        content: [{
-          type: "text",
-          text: JSON.stringify({
-            id: thought.id,
-            title: thoughtTitle(thought.content, thought.created_at),
-            text: thought.content,
-            url: thoughtUrl(thought.id),
-            metadata: thought.metadata,
-          }),
-        }],
+      const thoughtId = requiredString(args, "id", 256);
+      if (!thoughtId) return rpcError(id, "id must be a non-empty string", -32602);
+      const thought = await ctx.runQuery(internal.brain.getThought, { id: thoughtId, exclude_restricted: true });
+      if (!thought || "restricted" in thought) return rpcError(id, "Thought not found", -32602);
+      return rpcResult(id, {
+        content: [{ type: "text", text: JSON.stringify({
+          id: thought.id,
+          title: thoughtTitle(thought.content, thought.created_at),
+          text: thought.content,
+          url: thoughtUrl(thought.id),
+          metadata: thought.metadata,
+        }) }],
       });
     }
     if (call.name === "list_thoughts") {
-      const result: ListThoughtsResponse = await ctx.runQuery(api.brain.listThoughts, {
-        per_page: typeof args.limit === "number" ? args.limit : 10,
-        type: typeof args.type === "string" ? args.type : undefined,
+      const limit = boundedInteger(args, "limit", 10, 1, 100);
+      const type = args.type === undefined ? undefined : requiredString(args, "type", 100);
+      if (limit === null) return rpcError(id, "limit must be an integer between 1 and 100", -32602);
+      if (args.type !== undefined && !type) return rpcError(id, "type must be a non-empty string", -32602);
+      const result: ListThoughtsResponse = await ctx.runQuery(internal.brain.listThoughts, {
+        per_page: limit,
+        type: type || undefined,
         exclude_restricted: true,
       });
       const text = result.data.map((thought: PublicThought, index: number) => `${index + 1}. [${new Date(thought.created_at).toLocaleDateString()}] (${thought.type})\n   ${thought.content}`).join("\n\n");
-      return mcpResult(rpc.id, { content: [{ type: "text", text: text || "No thoughts found." }] });
+      return rpcResult(id, { content: [{ type: "text", text: text || "No thoughts found." }] });
     }
     if (call.name === "thought_stats") {
-      const stats = await ctx.runQuery(api.brain.stats, { exclude_restricted: true });
-      return mcpResult(rpc.id, { content: [{ type: "text", text: JSON.stringify(stats, null, 2) }] });
+      const stats = await ctx.runQuery(internal.brain.stats, { exclude_restricted: true });
+      return rpcResult(id, { content: [{ type: "text", text: JSON.stringify(stats, null, 2) }] });
     }
     if (call.name === "capture_thought") {
-      const content = typeof args.content === "string" ? args.content : "";
-      const result = await ctx.runAction(api.brain.captureThought, { content, source_type: "mcp" });
-      return mcpResult(rpc.id, { content: [{ type: "text", text: `Captured as ${result.type}` }] });
+      const content = requiredString(args, "content", 15000);
+      if (!content) return rpcError(id, "content must be a non-empty string of at most 15000 characters", -32602);
+      const result = await ctx.runAction(internal.brain.captureThought, { content, source_type: "mcp" });
+      return rpcResult(id, { content: [{ type: "text", text: JSON.stringify({ thought_id: result.thought_id, type: result.type }) }] });
     }
-    return mcpError(rpc.id, `Unknown tool: ${call.name}`, -32602);
+    return rpcError(id, `Unknown tool: ${call.name}`, -32602);
   } catch (error) {
-    return mcpError(rpc.id, error instanceof Error ? error.message : "Tool call failed");
+    return rpcResult(id, {
+      content: [{ type: "text", text: error instanceof Error ? error.message : "Tool call failed" }],
+      isError: true,
+    });
   }
 }
 
+async function mcpHandler(ctx: HttpCtx, request: Request): Promise<Response> {
+  if (!originAllowed(request)) return json({ error: "Untrusted Origin" }, 403);
+  if (request.method === "OPTIONS") return empty();
+  if (!auth(request).authorized) return unauthorized();
+  const protocolHeader = request.headers.get("mcp-protocol-version");
+  if (protocolHeader && !MCP_PROTOCOL_VERSIONS.includes(protocolHeader.trim() as (typeof MCP_PROTOCOL_VERSIONS)[number])) {
+    return json({ error: "Unsupported MCP protocol version" }, 400);
+  }
+  if (request.method === "GET" || request.method !== "POST") return json({ error: "Method Not Allowed" }, 405);
+
+  let input: unknown;
+  try {
+    input = await request.json();
+  } catch {
+    return rpcResponse(rpcError(null, "Parse error", -32700), 400);
+  }
+  const batch = Array.isArray(input);
+  const values: unknown[] = Array.isArray(input) ? input : [input];
+  if (values.length === 0) return rpcResponse(rpcError(null, "Invalid Request", -32600), 400);
+
+  const responses: JsonRpcResponse[] = [];
+  for (const value of values) {
+    const rpc = parseRpcRequest(value);
+    if (!rpc) {
+      responses.push(rpcError(null, "Invalid Request", -32600));
+      continue;
+    }
+    const response = await dispatchMcp(ctx, rpc);
+    if (Object.prototype.hasOwnProperty.call(rpc, "id")) responses.push(response);
+  }
+  if (responses.length === 0) return empty(202);
+  return rpcResponse(batch ? responses : responses[0]);
+}
+
+http.route({ path: "/mcp", method: "OPTIONS", handler: httpAction(mcpHandler) });
 http.route({ pathPrefix: "/", method: "OPTIONS", handler: httpAction(restHandler) });
 http.route({ path: "/health", method: "GET", handler: httpAction(restHandler) });
 http.route({ path: "/stats", method: "GET", handler: httpAction(restHandler) });

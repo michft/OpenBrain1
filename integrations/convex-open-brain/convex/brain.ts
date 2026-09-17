@@ -1,5 +1,5 @@
 import { v } from "convex/values";
-import { action, internalMutation, internalQuery, mutation, query } from "./_generated/server";
+import { internalAction, internalMutation, internalQuery } from "./_generated/server";
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import { compactFingerprint, idFromString, normalizeThought, tokenSimilarity } from "./lib/format";
@@ -110,12 +110,12 @@ function filterRows(
   });
 }
 
-export const health = query({
+export const health = internalQuery({
   args: {},
   handler: async () => ({ ok: true, status: "ok", service: "convex-open-brain", version: "0.1.0" }),
 });
 
-export const listThoughts = query({
+export const listThoughts = internalQuery({
   args: {
     page: v.optional(v.number()),
     per_page: v.optional(v.number()),
@@ -144,7 +144,7 @@ export const listThoughts = query({
   },
 });
 
-export const getThought = query({
+export const getThought = internalQuery({
   args: { id: v.string(), exclude_restricted: v.optional(v.boolean()) },
   handler: async (ctx, args): Promise<GetThoughtResponse> => {
     const row = await ctx.db.get(idFromString(args.id));
@@ -166,7 +166,7 @@ export const fetchThoughtRows = internalQuery({
   },
 });
 
-export const stats = query({
+export const stats = internalQuery({
   args: {
     days: v.optional(v.number()),
     exclude_restricted: v.optional(v.boolean()),
@@ -236,7 +236,7 @@ export const upsertThought = internalMutation({
   },
 });
 
-export const captureThought = action({
+export const captureThought = internalAction({
   args: {
     content: v.string(),
     metadata: v.optional(metadataValidator),
@@ -285,7 +285,7 @@ export const captureThought = action({
   },
 });
 
-export const updateThought = mutation({
+export const updateThought = internalMutation({
   args: {
     id: v.string(),
     content: v.optional(v.string()),
@@ -332,7 +332,7 @@ export const updateThought = mutation({
   },
 });
 
-export const deleteThought = mutation({
+export const deleteThought = internalMutation({
   args: { id: v.string() },
   handler: async (ctx, args) => {
     await ctx.db.delete(idFromString(args.id));
@@ -340,7 +340,7 @@ export const deleteThought = mutation({
   },
 });
 
-export const semanticSearch = action({
+export const semanticSearch = internalAction({
   args: {
     query: v.string(),
     limit: v.optional(v.number()),
@@ -377,7 +377,7 @@ export const semanticSearch = action({
   },
 });
 
-export const textSearch = query({
+export const textSearch = internalQuery({
   args: {
     query: v.string(),
     limit: v.optional(v.number()),
@@ -405,7 +405,7 @@ export const textSearch = query({
   },
 });
 
-export const duplicates = query({
+export const duplicates = internalQuery({
   args: {
     threshold: v.optional(v.number()),
     limit: v.optional(v.number()),
@@ -445,7 +445,7 @@ export const duplicates = query({
   },
 });
 
-export const reflections = query({
+export const reflections = internalQuery({
   args: { thoughtId: v.string() },
   handler: async (ctx, args) => {
     const rows = await ctx.db
@@ -471,7 +471,7 @@ export const reflections = query({
   },
 });
 
-export const addReflection = mutation({
+export const addReflection = internalMutation({
   args: {
     thoughtId: v.string(),
     trigger_context: v.optional(v.string()),

@@ -19,7 +19,7 @@ This integration replaces the default Supabase/Postgres storage layer with Conve
 
 - `NEXT_PUBLIC_API_URL` can point at a Convex `.convex.site` URL.
 - `AGENT_MEMORY_API_URL` can point at the same Convex site with `/agent-memory-api`.
-- MCP clients can call `/mcp?key=...`.
+- MCP clients call `/mcp` with `Authorization: Bearer ...` or `x-brain-key`; `/mcp?key=...` remains a compatibility option.
 - OpenRouter/OpenAI embeddings and classification stay intact.
 - Python and Node import recipes can still call HTTP endpoints with `x-brain-key`.
 - The old Supabase functions remain in `server/`, `integrations/open-brain-rest/`, and `integrations/agent-memory-api/` for migration validation.
@@ -56,6 +56,7 @@ Required values:
 CONVEX_DEPLOYMENT=dev:your-deployment
 NEXT_PUBLIC_CONVEX_URL=https://your-deployment.convex.cloud
 MCP_ACCESS_KEY=your-generated-access-key
+MCP_ADMIN_KEY=a-different-generated-admin-key
 OPENROUTER_API_KEY=sk-or-v1-...
 ```
 
@@ -67,34 +68,64 @@ AGENT_MEMORY_API_URL=https://your-deployment.convex.site/agent-memory-api
 SESSION_SECRET="$(openssl rand -hex 32)"
 ```
 
-## Setup
+## Development Deployment
+
+Local `.env.local` configures local commands. It does **not** install secrets in the hosted Convex deployment. Keep the agent and admin keys different; reserve the admin key for human review and trusted imports.
 
 ```bash
 cd integrations/convex-open-brain
 pnpm install
-pnpm convex dev
+pnpm test
+pnpm typecheck
 ```
 
-Set production environment variables in Convex before deploying:
+Set the existing development deployment's environment. The first three commands prompt for secret values, keeping them out of shell history:
 
 ```bash
-pnpm convex env set MCP_ACCESS_KEY "your-generated-access-key"
-pnpm convex env set OPENROUTER_API_KEY "sk-or-v1-..."
-pnpm convex env set OPENROUTER_BASE "https://openrouter.ai/api/v1"
-pnpm convex env set OPEN_BRAIN_EMBEDDING_MODEL "openai/text-embedding-3-small"
-pnpm convex env set OPEN_BRAIN_CLASSIFICATION_MODEL "openai/gpt-4o-mini"
-pnpm convex deploy
+pnpm convex env set --deployment dev MCP_ACCESS_KEY
+pnpm convex env set --deployment dev MCP_ADMIN_KEY
+pnpm convex env set --deployment dev OPENROUTER_API_KEY
+pnpm convex env set --deployment dev OPENROUTER_BASE "https://openrouter.ai/api/v1"
+pnpm convex env set --deployment dev OPEN_BRAIN_EMBEDDING_MODEL "openai/text-embedding-3-small"
+pnpm convex env set --deployment dev OPEN_BRAIN_CLASSIFICATION_MODEL "openai/gpt-4o-mini"
+pnpm convex dev --once --typecheck enable --tail-logs disable
 ```
+
+`dev --once` pushes code and exits; it does not leave a watcher running. Confirm `.env.local` selects the intended development deployment first. A production deployment is a separate operation: explicitly configure secrets with `--prod`, then run `pnpm convex deploy` only when ready to release. Bare `convex deploy` normally targets production even when `.env.local` names a development deployment.
+
+## MCP Client Connection
+
+Use Streamable HTTP at `https://YOUR_DEPLOYMENT.convex.site/mcp` with this header:
+
+```text
+Authorization: Bearer YOUR_MCP_ACCESS_KEY
+```
+
+The server is stateless: JSON POST responses, notification acknowledgements, and no SSE stream or session ID. Native clients can omit `Origin`. Browser clients must use the endpoint's own origin or an origin configured in the comma-separated `MCP_ALLOWED_ORIGINS` deployment variable.
+
+The six MCP tools access captured **thoughts**. Agent Memory recall/write-back remains a separate `/agent-memory-api` REST surface. This deployment uses one shared private-brain agent credential; it does not provide OAuth or separate user/workspace identities for a public multi-tenant service.
+
+### Human Review and Trust
+
+Use the admin key in the same `x-brain-key` or bearer header for `PATCH /agent-memory-api/memories/:id/review`. Agent keys receive `403`. Untrusted write-back stays evidence-only and pending even if the request claims `user_confirmed` or `imported`; only an admin-authorized trusted write-back may use those claims to create instruction-grade memory. Never send `MCP_ADMIN_KEY` to an agent runtime.
+
+All database functions are internal Convex functions, reached through authenticated HTTP actions. Direct client calls to the Convex `.cloud` API cannot bypass the HTTP key.
+
+To rotate a key, replace the corresponding deployed secret and update that credential's clients. Replacing the agent key does not require changing the admin key. Keep keys out of URLs where header authentication is available.
 
 ## Validation
 
-Convex path:
+Local tests exercise HTTP auth, MCP lifecycle/tool calls, restricted thoughts, and memory trust with deterministic embeddings. CI runs these tests and TypeScript checking without cloud credentials.
+
+Live validation uses the official MCP client SDK and real embedding requests. It creates one temporary thought, exercises all six tools, and deletes that thought in a `finally` cleanup. Provider usage may incur a small charge. Run against development first:
 
 ```bash
-OB1_CONVEX_URL="https://YOUR_DEPLOYMENT.convex.site" \
-OB1_CONVEX_KEY="YOUR_MCP_ACCESS_KEY" \
-pnpm smoke
+node --env-file=.env.local smoke/live-smoke.mjs
 ```
+
+Set `CONVEX_SITE_URL` and `MCP_ACCESS_KEY` locally, or supply `OB1_CONVEX_URL` and `OB1_CONVEX_KEY` through your secret manager. Success requires rejected unauthorized/direct-Convex requests, a complete SDK handshake, and capture → semantic search → fetch with cleanup. `401` indicates a missing or mismatched deployed credential; local environment values alone are insufficient.
+
+For a custom HTTP domain, also set `CONVEX_URL` to its `.convex.cloud` API URL so the direct-access check runs. Set `OPEN_BRAIN_CITATION_BASE_URL` to your dashboard's thought URL root, or the protected REST root `https://YOUR_DEPLOYMENT.convex.site/thought`; REST citation links require authentication.
 
 Legacy Supabase path still works for comparison:
 
@@ -116,7 +147,7 @@ node ../agent-memory-api/smoke/live-smoke.mjs
 
 - Convex stores vectors in the same `thoughts` and `agentMemories` tables for the v1 migration because this keeps the endpoint code simple and matches the repo's current single-row thought pattern.
 - Vector search runs in Convex actions; queries and mutations handle deterministic database reads/writes.
-- The old `service_role` and RLS language does not map to Convex. Use Convex function boundaries plus `MCP_ACCESS_KEY` for this compatibility layer.
+- The old `service_role` and RLS language does not map to Convex. Use internal Convex function boundaries plus separate agent/admin HTTP keys for this compatibility layer.
 - Instruction-grade Agent Memory rules are preserved: generated or inferred write-back starts evidence-only and pending review.
 - Raw transcripts, reasoning traces, secrets, and large code blocks are still blocked before durable write-back.
 

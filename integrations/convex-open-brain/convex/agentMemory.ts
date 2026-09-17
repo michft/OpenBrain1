@@ -1,5 +1,5 @@
 import { v } from "convex/values";
-import { action, internalMutation, internalQuery, mutation, query } from "./_generated/server";
+import { internalAction, internalMutation, internalQuery } from "./_generated/server";
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import { memoryIdFromString, responseMemory } from "./lib/format";
@@ -248,7 +248,7 @@ export const insertRecallItems = internalMutation({
   },
 });
 
-export const recall = action({
+export const recall = internalAction({
   args: {
     schema_version: v.string(),
     workspace_id: v.string(),
@@ -452,7 +452,7 @@ export const insertMemory = internalMutation({
   },
 });
 
-export const writeback = action({
+export const writeback = internalAction({
   args: {
     schema_version: v.string(),
     workspace_id: v.string(),
@@ -472,6 +472,7 @@ export const writeback = action({
       confidence: v.number(),
       requires_review: v.boolean(),
     }),
+    trusted_writeback: v.optional(v.boolean()),
     retention: retentionValidator,
     visibility: metadataValidator,
   },
@@ -492,7 +493,11 @@ export const writeback = action({
     }
     const provider = req.models_used[0]?.provider ?? null;
     const model = req.models_used[0]?.model ?? null;
-    const defaultInstruction = ["user_confirmed", "imported"].includes(req.provenance.default_status) && !req.provenance.requires_review;
+    const trustedWriteback = req.trusted_writeback === true;
+    const provenanceStatus = trustedWriteback || !["user_confirmed", "imported"].includes(req.provenance.default_status)
+      ? req.provenance.default_status
+      : "generated";
+    const defaultInstruction = trustedWriteback && ["user_confirmed", "imported"].includes(provenanceStatus) && !req.provenance.requires_review;
     const created: Doc<"agentMemories">[] = [];
     for (const [index, row] of rows.entries()) {
       const contentHash = await sha256Hex(`${row.memory_type}:${row.content}`);
@@ -510,9 +515,9 @@ export const writeback = action({
         summary: row.content.replace(/\s+/g, " ").slice(0, 140),
         content: row.content,
         embedding,
-        provenanceStatus: req.provenance.default_status,
+        provenanceStatus,
         confidence: req.provenance.confidence,
-        createdBy: req.provenance.default_status === "imported" ? "import" : "agent",
+        createdBy: provenanceStatus === "imported" ? "import" : "agent",
         runtimeName: req.runtime?.name ?? "unknown",
         runtimeVersion: req.runtime?.version ?? null,
         provider,
@@ -543,7 +548,7 @@ export const writeback = action({
         runtimeName: req.runtime?.name ?? "unknown",
         taskId: req.task_id ?? null,
         actorKind: "agent",
-        payload: { provenance_status: req.provenance.default_status, review_status: memory.reviewStatus },
+        payload: { provenance_status: provenanceStatus, review_status: memory.reviewStatus },
       });
       created.push(memory);
     }
@@ -551,7 +556,7 @@ export const writeback = action({
   },
 });
 
-export const memories = query({
+export const memories = internalQuery({
   args: {
     workspace_id: v.string(),
     project_id: v.optional(v.string()),
@@ -577,7 +582,7 @@ export const memories = query({
   },
 });
 
-export const reviewQueue = query({
+export const reviewQueue = internalQuery({
   args: { workspace_id: v.string(), project_id: v.optional(v.string()) },
   handler: async (ctx, args) => {
     const rows = (await ctx.db.query("agentMemories").withIndex("by_workspace_review", (q) => q.eq("workspaceId", args.workspace_id).eq("reviewStatus", "pending")).collect())
@@ -587,7 +592,7 @@ export const reviewQueue = query({
   },
 });
 
-export const memory = query({
+export const memory = internalQuery({
   args: { id: v.string() },
   handler: async (ctx, args) => {
     const memoryRow = await ctx.db.get(memoryIdFromString(args.id));
@@ -598,7 +603,7 @@ export const memory = query({
   },
 });
 
-export const reviewMemory = mutation({
+export const reviewMemory = internalMutation({
   args: {
     id: v.string(),
     action: v.string(),
@@ -697,7 +702,7 @@ export const reviewMemory = mutation({
   },
 });
 
-export const recallTrace = query({
+export const recallTrace = internalQuery({
   args: { request_id: v.string() },
   handler: async (ctx, args) => {
     const trace = await ctx.db.query("agentMemoryRecallTraces").withIndex("by_request", (q) => q.eq("requestId", args.request_id)).unique();
@@ -711,7 +716,7 @@ export const recallTrace = query({
   },
 });
 
-export const reportUsage = mutation({
+export const reportUsage = internalMutation({
   args: {
     request_id: v.string(),
     used_memory_ids: v.array(v.string()),

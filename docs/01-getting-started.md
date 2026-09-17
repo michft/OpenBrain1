@@ -39,24 +39,27 @@ Convex is your database and HTTP runtime. It stores thoughts, embeddings, metada
 2. Create a project named `open-brain` or use the Convex CLI during setup
 3. Open [`integrations/convex-open-brain`](../integrations/convex-open-brain/)
 4. Copy `.env.example` to `.env.local`
-5. Fill in `MCP_ACCESS_KEY`, `OPENROUTER_API_KEY`, and your Convex deployment values
+5. Fill in `MCP_ACCESS_KEY`, a different `MCP_ADMIN_KEY`, `OPENROUTER_API_KEY`, and your Convex deployment values. Keep the admin key for human review; agent clients receive only the access key.
 
 ```bash
 cd integrations/convex-open-brain
 pnpm install
-pnpm convex dev
+pnpm convex dev --once
 ```
 
-Set production environment variables before deploying:
+Configure the development deployment explicitly. Local `.env.local` values do not populate hosted secrets. Secret-setting commands below prompt for values:
 
 ```bash
-pnpm convex env set MCP_ACCESS_KEY "your-generated-access-key"
-pnpm convex env set OPENROUTER_API_KEY "sk-or-v1-..."
-pnpm convex env set OPENROUTER_BASE "https://openrouter.ai/api/v1"
-pnpm convex deploy
+pnpm convex env set --deployment dev MCP_ACCESS_KEY
+pnpm convex env set --deployment dev MCP_ADMIN_KEY
+pnpm convex env set --deployment dev OPENROUTER_API_KEY
+pnpm convex env set --deployment dev OPENROUTER_BASE "https://openrouter.ai/api/v1"
+pnpm test
+pnpm typecheck
+pnpm convex dev --once --typecheck enable --tail-logs disable
 ```
 
-✅ **Done when:** `https://YOUR_DEPLOYMENT.convex.site/health` returns `{"ok":true}` when called with `x-brain-key: YOUR_MCP_ACCESS_KEY`.
+✅ **Done when:** authenticated `/health` succeeds and the [MCP live smoke check](../integrations/convex-open-brain/README.md#validation) passes. Production is a separate release: configure secrets with `--prod` before using `pnpm convex deploy`, which normally targets production.
 
 Dashboard configuration:
 
@@ -66,11 +69,13 @@ AGENT_MEMORY_API_URL=https://YOUR_DEPLOYMENT.convex.site/agent-memory-api
 SESSION_SECRET="$(openssl rand -hex 32)"
 ```
 
-MCP connection URL:
+MCP connection URL (Streamable HTTP):
 
 ```text
-https://YOUR_DEPLOYMENT.convex.site/mcp?key=YOUR_MCP_ACCESS_KEY
+https://YOUR_DEPLOYMENT.convex.site/mcp
 ```
+
+Send `Authorization: Bearer YOUR_MCP_ACCESS_KEY` or `x-brain-key: YOUR_MCP_ACCESS_KEY`. Clients supporting only a URL can append `?key=YOUR_MCP_ACCESS_KEY`; prefer headers to keep credentials out of URLs.
 
 Legacy Supabase setup begins below and is preserved only for existing installs and migration validation.
 

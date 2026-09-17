@@ -7,13 +7,19 @@
     "deploy": "convex deploy",
     "codegen": "convex codegen",
     "typecheck": "tsc --noEmit",
-    "smoke": "node smoke/live-smoke.mjs"
+    "smoke": "node smoke/live-smoke.mjs",
+    "test": "vitest run"
   },
   "dependencies": {
-    "convex": "^1.28.0"
+    "convex": "^1.45.0"
   },
   "devDependencies": {
+    "@edge-runtime/vm": "^5.0.0",
+    "@modelcontextprotocol/sdk": "^1.30.0",
     "@types/node": "^25.7.0",
-    "typescript": "^5.9.3"
+    "convex-test": "^0.0.58",
+    "typescript": "^5.9.3",
+    "vite": "^8.3.0",
+    "vitest": "^5.0.1"
   }
 }
