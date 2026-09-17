@@ -8,11 +8,11 @@ writes.
 
 - Core Principle
 - Consistency Rule
-- 1. Push Filters To Storage (indexes, migration rule, redundant indexes)
-- 2. Minimize Data Sources (denormalization, fallback rule)
-- 3. Minimize Row Size (digest tables)
-- 4. Skip No-Op Writes
-- 5. Match Consistency To Read Patterns (high-read/low-write,
+- 1\. Push Filters To Storage (indexes, migration rule, redundant indexes)
+- 2\. Minimize Data Sources (denormalization, fallback rule)
+- 3\. Minimize Row Size (digest tables)
+- 4\. Skip No-Op Writes
+- 5\. Match Consistency To Read Patterns (high-read/low-write,
      high-read/high-write)
 - Convex-Specific Notes (reactive queries, point-in-time reads, triggers,
   aggregates, backfills)

@@ -2,10 +2,10 @@ import { v } from "convex/values";
 import { internalAction, internalMutation, internalQuery } from "./_generated/server";
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
-import { compactFingerprint, idFromString, normalizeThought, tokenSimilarity } from "./lib/format";
+import { compactFingerprint, normalizeThought, tokenSimilarity } from "./lib/format";
 import type { PublicThought } from "./lib/format";
-import { extractMetadata, getEmbedding } from "./lib/openrouter";
-import { metadataValidator, reflectionFactorValidator, reflectionOptionValidator } from "./lib/validators";
+import { extractMetadata, fallbackMetadata, getEmbedding } from "./lib/openrouter";
+import { coerceMetadata, metadataValidator, reflectionFactorValidator, reflectionOptionValidator } from "./lib/validators";
 import type { Metadata } from "./lib/validators";
 
 type UpsertThoughtResult = {
@@ -47,6 +47,23 @@ type SemanticSearchResponse = {
 type VectorMatch<TableName extends "thoughts"> = {
   _id: Id<TableName>;
   _score: number;
+};
+
+const DUPLICATE_SCAN_LIMIT = 200;
+const DUPLICATE_WINDOW_DAYS = 90;
+
+type DuplicatePair = {
+  thought_id_a: Id<"thoughts">;
+  thought_id_b: Id<"thoughts">;
+  similarity: number;
+  content_a: string;
+  content_b: string;
+  type_a: string;
+  type_b: string;
+  quality_a: number;
+  quality_b: number;
+  created_a: string;
+  created_b: string;
 };
 
 function now(): string {
@@ -147,7 +164,8 @@ export const listThoughts = internalQuery({
 export const getThought = internalQuery({
   args: { id: v.string(), exclude_restricted: v.optional(v.boolean()) },
   handler: async (ctx, args): Promise<GetThoughtResponse> => {
-    const row = await ctx.db.get(idFromString(args.id));
+    const id = ctx.db.normalizeId("thoughts", args.id);
+    const row = id ? await ctx.db.get("thoughts", id) : null;
     if (!row) return null;
     if (args.exclude_restricted !== false && isRestricted(row)) return { restricted: true };
     return normalizeThought(row);
@@ -254,11 +272,13 @@ export const captureThought = internalAction({
       getEmbedding(content),
       args.metadata ? Promise.resolve(args.metadata) : extractMetadata(content),
     ]);
-    const type = args.type || stringValue(extracted.type, "observation");
-    const sourceType = args.source_type || stringValue(extracted.source, "dashboard");
+    const normalized = coerceMetadata(extracted);
+    const safeExtracted = Object.keys(normalized).length ? normalized : fallbackMetadata(content);
+    const type = args.type || stringValue(safeExtracted.type, "observation");
+    const sourceType = args.source_type || stringValue(safeExtracted.source, "dashboard");
     const status = args.status !== undefined ? args.status : ["task", "idea"].includes(type) ? "new" : null;
     const metadata = {
-      ...extracted,
+      ...safeExtracted,
       type,
       source: sourceType,
       source_type: sourceType,
@@ -269,16 +289,16 @@ export const captureThought = internalAction({
       embedding,
       type,
       sourceType,
-      importance: args.importance ?? numberValue(extracted.importance, 50),
-      qualityScore: args.quality_score ?? numberValue(extracted.quality_score, 70),
-      sensitivityTier: args.sensitivity_tier || stringValue(extracted.sensitivity_tier, "standard"),
+      importance: args.importance ?? numberValue(safeExtracted.importance, 50),
+      qualityScore: args.quality_score ?? numberValue(safeExtracted.quality_score, 70),
+      sensitivityTier: args.sensitivity_tier || stringValue(safeExtracted.sensitivity_tier, "standard"),
       status,
     });
     return {
       thought_id: result.id,
       action: result.action === "created" ? "created" : "created_or_updated",
       type,
-      sensitivity_tier: args.sensitivity_tier || stringValue(extracted.sensitivity_tier, "standard"),
+      sensitivity_tier: args.sensitivity_tier || stringValue(safeExtracted.sensitivity_tier, "standard"),
       content_fingerprint: result.fingerprint,
       message: "Thought captured",
     };
@@ -297,8 +317,9 @@ export const updateThought = internalMutation({
     status: v.optional(v.union(v.string(), v.null())),
   },
   handler: async (ctx, args) => {
-    const id = idFromString(args.id);
-    const existing = await ctx.db.get(id);
+    const id = ctx.db.normalizeId("thoughts", args.id);
+    if (!id) throw new Error("Thought not found");
+    const existing = await ctx.db.get("thoughts", id);
     if (!existing) throw new Error("Thought not found");
     const timestamp = now();
     const patch: {
@@ -327,7 +348,7 @@ export const updateThought = internalMutation({
       patch.status = args.status;
       patch.statusUpdatedAt = timestamp;
     }
-    await ctx.db.patch(id, patch);
+    await ctx.db.patch("thoughts", id, patch);
     return { id: args.id, action: "updated", message: "Thought updated" };
   },
 });
@@ -335,7 +356,9 @@ export const updateThought = internalMutation({
 export const deleteThought = internalMutation({
   args: { id: v.string() },
   handler: async (ctx, args) => {
-    await ctx.db.delete(idFromString(args.id));
+    const id = ctx.db.normalizeId("thoughts", args.id);
+    if (!id || !(await ctx.db.get("thoughts", id))) throw new Error("Thought not found");
+    await ctx.db.delete("thoughts", id);
     return { id: args.id, action: "deleted", message: "Thought deleted" };
   },
 });
@@ -415,42 +438,109 @@ export const duplicates = internalQuery({
     const threshold = args.threshold ?? 0.85;
     const limit = Math.min(100, Math.max(1, Math.floor(args.limit ?? 50)));
     const offset = Math.max(0, Math.floor(args.offset ?? 0));
-    const thoughts = await ctx.db.query("thoughts").collect();
-    const pairs = [];
+    const windowStart = new Date(Date.now() - DUPLICATE_WINDOW_DAYS * 24 * 60 * 60 * 1000).toISOString();
+    const scanned = await ctx.db
+      .query("thoughts")
+      .withIndex("by_createdAt", (q) => q.gte("createdAt", windowStart))
+      .order("desc")
+      .take(DUPLICATE_SCAN_LIMIT + 1);
+    // Older edits may have left the stored fingerprint out of sync with content.
+    const thoughts = scanned.slice(0, DUPLICATE_SCAN_LIMIT)
+      .map((row) => ({ ...row, contentFingerprint: compactFingerprint(row.content) }));
+    const truncated = scanned.length > DUPLICATE_SCAN_LIMIT;
+    const candidateIds = new Set(thoughts.map((thought) => thought._id));
+    const thoughtsByFingerprint = new Map<string, Doc<"thoughts">[]>();
+    for (const thought of thoughts) {
+      const group = thoughtsByFingerprint.get(thought.contentFingerprint) ?? [];
+      group.push(thought);
+      thoughtsByFingerprint.set(thought.contentFingerprint, group);
+    }
+
+    const exactGroups = new Map<string, Doc<"thoughts">[]>();
+    for (const [fingerprint, candidates] of thoughtsByFingerprint) {
+      // Read at most two indexed rows per fingerprint. Candidate rows already
+      // cover all exact matches in the bounded scan window; one extra row may
+      // be an older or cap-excluded imported duplicate, without scanning an
+      // unbounded fingerprint group.
+      const indexed = await ctx.db
+        .query("thoughts")
+        .withIndex("by_contentFingerprint", (q) => q.eq("contentFingerprint", fingerprint))
+        .order("desc")
+        .take(2);
+      const rows = [...candidates];
+      for (const row of indexed) {
+        if (!candidateIds.has(row._id) && rows.length === candidates.length
+          && compactFingerprint(row.content) === fingerprint) rows.push(row);
+      }
+      exactGroups.set(fingerprint, rows);
+    }
+
+    const pairs: DuplicatePair[] = [];
+    const pairKeys = new Set<string>();
+    const addPair = (a: Doc<"thoughts">, b: Doc<"thoughts">, similarity: number) => {
+      const [first, second] = a._id < b._id ? [a, b] : [b, a];
+      const key = `${first._id}:${second._id}`;
+      if (pairKeys.has(key)) return;
+      pairKeys.add(key);
+      pairs.push({
+        thought_id_a: first._id,
+        thought_id_b: second._id,
+        similarity,
+        content_a: first.content,
+        content_b: second.content,
+        type_a: first.type,
+        type_b: second.type,
+        quality_a: first.qualityScore,
+        quality_b: second.qualityScore,
+        created_a: first.createdAt,
+        created_b: second.createdAt,
+      });
+    };
+
+    for (const group of exactGroups.values()) {
+      for (let i = 0; i < group.length; i += 1) {
+        for (let j = i + 1; j < group.length; j += 1) {
+          if (1 >= threshold) addPair(group[i], group[j], 1);
+        }
+      }
+    }
+
     for (let i = 0; i < thoughts.length; i += 1) {
       for (let j = i + 1; j < thoughts.length; j += 1) {
         const a = thoughts[i];
         const b = thoughts[j];
-        const exact = compactFingerprint(a.content) === compactFingerprint(b.content);
-        const similarity = exact ? 1 : tokenSimilarity(a.content, b.content);
-        if (similarity >= threshold) {
-          pairs.push({
-            thought_id_a: a._id,
-            thought_id_b: b._id,
-            similarity,
-            content_a: a.content,
-            content_b: b.content,
-            type_a: a.type,
-            type_b: b.type,
-            quality_a: a.qualityScore,
-            quality_b: b.qualityScore,
-            created_a: a.createdAt,
-            created_b: b.createdAt,
-          });
-        }
+        if (a.contentFingerprint === b.contentFingerprint) continue;
+        const similarity = tokenSimilarity(a.content, b.content);
+        if (similarity >= threshold) addPair(a, b, similarity);
       }
     }
-    pairs.sort((a, b) => b.similarity - a.similarity || b.quality_a + b.quality_b - (a.quality_a + a.quality_b));
-    return { pairs: pairs.slice(offset, offset + limit), threshold, limit, offset };
+    pairs.sort(
+      (a, b) =>
+        b.similarity - a.similarity ||
+        b.quality_a + b.quality_b - (a.quality_a + a.quality_b) ||
+        a.thought_id_a.localeCompare(b.thought_id_a) ||
+        a.thought_id_b.localeCompare(b.thought_id_b),
+    );
+    return {
+      pairs: pairs.slice(offset, offset + limit),
+      threshold,
+      limit,
+      offset,
+      candidate_count: thoughts.length,
+      window_start: windowStart,
+      truncated,
+    };
   },
 });
 
 export const reflections = internalQuery({
   args: { thoughtId: v.string() },
   handler: async (ctx, args) => {
+    const thoughtId = ctx.db.normalizeId("thoughts", args.thoughtId);
+    if (!thoughtId) return { reflections: [] };
     const rows = await ctx.db
       .query("reflections")
-      .withIndex("by_thought", (q) => q.eq("thoughtId", idFromString(args.thoughtId)))
+      .withIndex("by_thought", (q) => q.eq("thoughtId", thoughtId))
       .collect();
     return {
       reflections: rows
@@ -483,8 +573,10 @@ export const addReflection = internalMutation({
     metadata: v.optional(metadataValidator),
   },
   handler: async (ctx, args) => {
+    const thoughtId = ctx.db.normalizeId("thoughts", args.thoughtId);
+    if (!thoughtId || !(await ctx.db.get("thoughts", thoughtId))) throw new Error("Thought not found");
     const id = await ctx.db.insert("reflections", {
-      thoughtId: idFromString(args.thoughtId),
+      thoughtId,
       triggerContext: args.trigger_context ?? "",
       options: args.options ?? [],
       factors: args.factors ?? [],

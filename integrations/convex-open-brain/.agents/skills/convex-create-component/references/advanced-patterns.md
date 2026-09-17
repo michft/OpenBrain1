@@ -123,6 +123,9 @@ export class Notifications {
 
 ```ts
 // App usage
+import { mutation } from "./_generated/server";
+import { v } from "convex/values";
+import { getAuthUserId } from "@convex-dev/auth/server";
 import { Notifications } from "@convex-dev/notifications";
 import { components } from "./_generated/api";
 
@@ -134,6 +137,7 @@ export const send = mutation({
   args: { message: v.string() },
   handler: async (ctx, args) => {
     const userId = await getAuthUserId(ctx);
+    if (!userId) throw new Error("Not authenticated");
     await notifications.send(ctx, { userId, message: args.message });
   },
 });

@@ -68,6 +68,105 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllEnvs());
 
 describe("agent memory writeback trust", () => {
+  it("paginates memory listings in descending creation order", async () => {
+    const t = makeTest();
+    await t.action(internal.agentMemory.writeback, writebackArgs({
+      memory_payload: {
+        decisions: ["First", "Second", "Third"],
+        outputs: [],
+        lessons: [],
+        constraints: [],
+        unresolved_questions: [],
+        next_steps: [],
+        failures: [],
+        artifacts: [],
+        entities: {},
+      },
+    }));
+
+    const first = await t.query(internal.agentMemory.memories, {
+      workspace_id: "workspace-test",
+      limit: 2,
+      cursor: null,
+    });
+    expect(first.memories).toHaveLength(2);
+    expect(first.memories.map((memory) => memory.content)).toEqual(["Third", "Second"]);
+    expect(first.is_done).toBe(false);
+    expect(first.continue_cursor).toEqual(expect.any(String));
+
+    const second = await t.query(internal.agentMemory.memories, {
+      workspace_id: "workspace-test",
+      limit: 2,
+      cursor: first.continue_cursor,
+    });
+    expect(second.memories).toHaveLength(1);
+    expect(second.memories.map((memory) => memory.content)).toEqual(["First"]);
+    expect(new Set([...first.memories, ...second.memories].map((memory) => memory.memory_id)).size).toBe(3);
+    expect(second.is_done).toBe(true);
+  });
+
+  it("rejects unsupported review actions before changing state or writing audit rows", async () => {
+    const t = makeTest();
+    await t.action(internal.agentMemory.writeback, writebackArgs());
+    const [before] = await t.run((ctx) => ctx.db.query("agentMemories").collect());
+
+    await expect(t.mutation(internal.agentMemory.reviewMemory, {
+      id: String(before._id),
+      action: "merge",
+      related_memory_id: "invalid-related-id",
+    })).rejects.toThrow("Unsupported review action");
+
+    expect(await t.run((ctx) => ctx.db.get("agentMemories", before._id))).toEqual(before);
+    expect(await t.run((ctx) => ctx.db.query("agentMemoryReviewActions").collect())).toEqual([]);
+    expect(await t.run((ctx) => ctx.db.query("agentMemoryAuditEvents").collect())).toHaveLength(1);
+  });
+
+  it("normalizes string memory IDs and preserves not-found behavior", async () => {
+    const t = makeTest();
+    expect(await t.query(internal.agentMemory.memory, { id: "invalid-memory-id" })).toBeNull();
+  });
+
+  it("rejects IDs from another table and deleted memory IDs", async () => {
+    const t = makeTest();
+    const thoughtId = await t.run((ctx) => ctx.db.insert("thoughts", {
+      content: "A thought ID must not resolve as a memory.",
+      metadata: {},
+      embedding: [1],
+      type: "observation",
+      sourceType: "test",
+      importance: 0.5,
+      qualityScore: 0.5,
+      sensitivityTier: "normal",
+      status: null,
+      statusUpdatedAt: null,
+      contentFingerprint: "thought-id-test",
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    }));
+    expect(await t.query(internal.agentMemory.memory, { id: String(thoughtId) })).toBeNull();
+
+    await t.action(internal.agentMemory.writeback, writebackArgs());
+    const [memoryRow] = await t.run((ctx) => ctx.db.query("agentMemories").collect());
+    await t.run((ctx) => ctx.db.delete("agentMemories", memoryRow._id));
+    await expect(t.mutation(internal.agentMemory.reviewMemory, {
+      id: String(memoryRow._id),
+      action: "confirm",
+    })).rejects.toThrow("Memory not found");
+  });
+
+  it("rejects related memory IDs before changing review state", async () => {
+    const t = makeTest();
+    await t.action(internal.agentMemory.writeback, writebackArgs());
+    const [before] = await t.run((ctx) => ctx.db.query("agentMemories").collect());
+
+    await expect(t.mutation(internal.agentMemory.reviewMemory, {
+      id: String(before._id),
+      action: "confirm",
+      related_memory_id: "unused-related-id",
+    })).rejects.toThrow("Related memory actions are unsupported");
+    expect(await t.run((ctx) => ctx.db.get("agentMemories", before._id))).toEqual(before);
+  });
+
   it.each(["user_confirmed", "imported"])("downgrades an untrusted %s claim", async (status) => {
     const t = makeTest();
     const result = await t.action(internal.agentMemory.writeback, writebackArgs({

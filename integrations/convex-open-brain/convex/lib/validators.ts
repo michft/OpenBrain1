@@ -53,6 +53,33 @@ export const metadataValueValidator = v.union(
 export const metadataValidator = v.record(v.string(), metadataValueValidator);
 export type Metadata = Infer<typeof metadataValidator>;
 
+function metadataKey(key: string): boolean {
+  return key.length > 0 && key.length <= 1024 && !/^[$_]/.test(key) && /^[\x20-\x7e]+$/.test(key);
+}
+
+function metadataScalarValue(value: unknown): value is string | number | boolean | null {
+  return value === null || ["string", "number", "boolean"].includes(typeof value);
+}
+
+function metadataScalarList(value: unknown): value is Array<string | number | boolean | null> {
+  return Array.isArray(value) && value.every(metadataScalarValue);
+}
+
+function metadataFlatObject(value: unknown): value is Record<string, string | number | boolean | null | Array<string | number | boolean | null>> {
+  return value !== null && typeof value === "object" && !Array.isArray(value)
+    && Object.entries(value).every(([key, item]) => metadataKey(key) && (metadataScalarValue(item) || metadataScalarList(item)));
+}
+
+/** Drop model-generated values that the stored metadata schema cannot accept. */
+export function coerceMetadata(value: unknown): Metadata {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return {};
+  return Object.fromEntries(Object.entries(value).filter((entry): entry is [string, Metadata[string]] => {
+    const [key, item] = entry;
+    return metadataKey(key) && (metadataScalarValue(item) || metadataScalarList(item)
+      || metadataFlatObject(item) || (Array.isArray(item) && item.every(metadataFlatObject)));
+  }));
+}
+
 export const reflectionOptionValidator = v.object({
   label: v.string(),
 });

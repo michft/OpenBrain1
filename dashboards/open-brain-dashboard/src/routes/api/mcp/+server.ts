@@ -1,6 +1,5 @@
 import { json } from '@sveltejs/kit';
 import { env as privateEnv } from '$env/dynamic/private';
-import { env as publicEnv } from '$env/dynamic/public';
 import type { RequestHandler } from './$types';
 
 type McpJsonRpcResponse = {
@@ -47,12 +46,12 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 			return json({ error: 'Missing tool name' }, { status: 400 });
 		}
 
-		const mcpUrl = privateEnv.MCP_URL || publicEnv.PUBLIC_MCP_URL;
-		const mcpKey = privateEnv.MCP_KEY || publicEnv.PUBLIC_MCP_KEY;
+		const mcpUrl = privateEnv.MCP_URL;
+		const mcpKey = privateEnv.MCP_KEY;
 
 		if (!mcpUrl || !mcpKey) {
 			return json(
-				{ error: 'Missing MCP_URL/MCP_KEY (or PUBLIC_MCP_URL/PUBLIC_MCP_KEY) in your environment config' },
+				{ error: 'Missing private MCP_URL/MCP_KEY in server environment config' },
 				{ status: 500 },
 			);
 		}

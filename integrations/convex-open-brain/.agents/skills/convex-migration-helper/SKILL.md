@@ -106,14 +106,14 @@ Every breaking migration follows the same multi-deploy pattern:
 
 **Between deploys - Migrate data:**
 
-5. Run migration to backfill existing documents
-6. Verify all documents are migrated
+1. Run migration to backfill existing documents
+2. Verify all documents are migrated
 
 **Deploy 2 - Narrow the schema:**
 
-7. Update schema to require the new format only
-8. Remove code that handles the old format
-9. Deploy
+1. Update schema to require the new format only
+2. Remove code that handles the old format
+3. Deploy
 
 ## Using the Migrations Component
 

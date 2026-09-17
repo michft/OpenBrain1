@@ -22,34 +22,42 @@
 # Personal Preferences
 
 ## Projects
+
 - Projects are to be built in Typescript
 
 ## TypeScript
+
 - Never use `any` unless 100% necessary or specifically instructed.
 
 ## Commands
+
 - Don't run dev server commands (e.g., `pnpm run dev`), assume it's already running.
 - Don't run build commands unless specifically told to.
 - Focus on development work (e.g., 'pnpm run typecheck', 'pnpm run lint', etc).
 
 ## Package Managers
+
 - Use pnpm, use bun if the project already uses it.
 - Never use npm or yarn.
 
 ## Tech Stack Preferences
+
 - When uncertain, prefer JJ, Tailwind, TypeScript, Pnpm, React, Convex, Clerk, Vercel, Posthog, Sentry, BullMQ, Stripe.
 - Expo and React-native when asked for mobile apps
 - React hook form for forms, Zod for form validation
 
 ## Code Style
+
 - Always strive for concise, simple solutions.
 - **If a problem can be solved in a simpler way, propose it.**
 
 ## Workflow
+
 - If asked to do too much work at once, stop and state work clearly.
 - If something needs clarification use the Grill-me-with-docs skill
 
 ## Reference Repos
+
 - Open-source Codex repo: https://github.com/openai/codex
 - Codex-Monitor (Tauri, feature-complete, strong reference implementation): https://github.com/Dimillian/CodexMonitor
 - T3 Code repo: https://github.com/pingdotgg/t3code
@@ -59,4 +67,3 @@ Use these as implementation references when designing protocol handling, UX flow
 - Skill repos: https://github.com/mattpocock/skills
 
 Use these as examples of good skill patterns
-

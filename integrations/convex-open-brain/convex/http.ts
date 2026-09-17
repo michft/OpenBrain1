@@ -3,7 +3,7 @@ import type { FunctionArgs } from "convex/server";
 import { httpAction } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { thoughtTitle, thoughtUrl } from "./lib/format";
-import type { PublicThought } from "./lib/format";
+import type { PublicMemory, PublicThought } from "./lib/format";
 
 const http = httpRouter();
 
@@ -107,6 +107,30 @@ function numberParam(url: URL, key: string, fallback: number): number {
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
+// Fill filtered pages across bounded queries; expose a cursor if sparse matches exhaust the request budget.
+async function listMemories(ctx: HttpCtx, args: FunctionArgs<typeof internal.agentMemory.memories>, review: boolean) {
+  const memories: PublicMemory[] = [];
+  const limit = args.limit ?? 50;
+  let cursor = args.cursor ?? null;
+  let isDone = false;
+  const maxScanPages = 20;
+  let scannedPages = 0;
+  while (memories.length < limit && !isDone && scannedPages < maxScanPages) {
+    const pagination = { limit: limit - memories.length, cursor };
+    const page = review
+      ? await ctx.runQuery(internal.agentMemory.reviewQueue, { workspace_id: args.workspace_id, project_id: args.project_id, ...pagination })
+      : await ctx.runQuery(internal.agentMemory.memories, { ...args, ...pagination });
+    memories.push(...page.memories);
+    cursor = page.continue_cursor;
+    isDone = page.is_done;
+    scannedPages += 1;
+  }
+  return {
+    memories, count: memories.length, continue_cursor: isDone ? null : cursor, is_done: isDone,
+    scan_limited: !isDone && memories.length < limit,
+  };
+}
+
 async function restHandler(ctx: HttpCtx, request: Request): Promise<Response> {
   if (request.method === "OPTIONS") return empty();
   if (!auth(request).authorized) return unauthorized();
@@ -149,7 +173,7 @@ async function restHandler(ctx: HttpCtx, request: Request): Promise<Response> {
     }
     if (thoughtMatch && request.method === "PUT") {
       const body = await readBody(request);
-      return json(await ctx.runMutation(internal.brain.updateThought, { id: thoughtMatch[1], ...body }));
+      return json(await ctx.runMutation(internal.brain.updateThought, { ...body, id: thoughtMatch[1] }));
     }
     if (thoughtMatch && request.method === "DELETE") {
       return json(await ctx.runMutation(internal.brain.deleteThought, { id: thoughtMatch[1] }));
@@ -175,7 +199,7 @@ async function restHandler(ctx: HttpCtx, request: Request): Promise<Response> {
       return json(await ctx.runQuery(internal.brain.reflections, { thoughtId: reflectionMatch[1] }));
     }
     if (reflectionMatch && request.method === "POST") {
-      return json(await ctx.runMutation(internal.brain.addReflection, { thoughtId: reflectionMatch[1], ...(await readBody(request)) }));
+      return json(await ctx.runMutation(internal.brain.addReflection, { ...(await readBody(request)), thoughtId: reflectionMatch[1] }));
     }
     const connectionsMatch = path.match(/^\/thought\/([^/]+)\/connections$/);
     if (connectionsMatch && request.method === "GET") {
@@ -217,20 +241,14 @@ async function agentMemoryHandler(ctx: HttpCtx, request: Request): Promise<Respo
     }
     const usageMatch = path.match(/^\/recall\/([^/]+)\/usage$/);
     if (usageMatch && request.method === "POST") {
-      return json(await ctx.runMutation(internal.agentMemory.reportUsage, { request_id: usageMatch[1], ...(await readBody(request)) } as ReportUsageArgs));
+      return json(await ctx.runMutation(internal.agentMemory.reportUsage, { ...(await readBody(request)), request_id: usageMatch[1] } as ReportUsageArgs));
     }
-    if (request.method === "GET" && path === "/memories/review") {
+    if (request.method === "GET" && ["/memories", "/memories/review"].includes(path)) {
       const workspaceId = url.searchParams.get("workspace_id");
       if (!workspaceId) return json({ error: "workspace_id is required" }, 400);
-      return json(await ctx.runQuery(internal.agentMemory.reviewQueue, {
-        workspace_id: workspaceId,
-        project_id: url.searchParams.get("project_id") || undefined,
-      }));
-    }
-    if (request.method === "GET" && path === "/memories") {
-      const workspaceId = url.searchParams.get("workspace_id");
-      if (!workspaceId) return json({ error: "workspace_id is required" }, 400);
-      return json(await ctx.runQuery(internal.agentMemory.memories, {
+      const limit = Number(url.searchParams.get("limit") ?? 50);
+      if (!Number.isInteger(limit) || limit < 1 || limit > 200) return json({ error: "limit must be an integer from 1 to 200" }, 400);
+      return json(await listMemories(ctx, {
         workspace_id: workspaceId,
         project_id: url.searchParams.get("project_id") || undefined,
         review_status: url.searchParams.get("review_status") || undefined,
@@ -238,13 +256,14 @@ async function agentMemoryHandler(ctx: HttpCtx, request: Request): Promise<Respo
         runtime_name: url.searchParams.get("runtime_name") || undefined,
         memory_type: url.searchParams.get("memory_type") || undefined,
         task_id_prefix: url.searchParams.get("task_id_prefix") || undefined,
-        limit: numberParam(url, "limit", 50),
-      }));
+        limit,
+        cursor: url.searchParams.get("cursor"),
+      }, path === "/memories/review"));
     }
     const memoryReviewMatch = path.match(/^\/memories\/([^/]+)\/review$/);
     if (memoryReviewMatch && request.method === "PATCH") {
       if (!access.admin) return json({ error: "Admin access required" }, 403);
-      return json(await ctx.runMutation(internal.agentMemory.reviewMemory, { id: memoryReviewMatch[1], ...(await readBody(request)) } as ReviewMemoryArgs));
+      return json(await ctx.runMutation(internal.agentMemory.reviewMemory, { ...(await readBody(request)), id: memoryReviewMatch[1] } as ReviewMemoryArgs));
     }
     const memoryMatch = path.match(/^\/memories\/([^/]+)$/);
     if (memoryMatch && request.method === "GET") {

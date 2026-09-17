@@ -1,4 +1,4 @@
-import type { Doc, Id } from "../_generated/dataModel";
+import type { Doc } from "../_generated/dataModel";
 
 export type PublicThought = {
   id: string;
@@ -124,14 +124,6 @@ export function thoughtTitle(content: string, createdAt?: string): string {
 export function thoughtUrl(id: string): string {
   const base = process.env.OPEN_BRAIN_CITATION_BASE_URL || "https://openbrain.local/thoughts";
   return `${base.replace(/\/$/, "")}/${id}`;
-}
-
-export function idFromString(value: string): Id<"thoughts"> {
-  return value as Id<"thoughts">;
-}
-
-export function memoryIdFromString(value: string): Id<"agentMemories"> {
-  return value as Id<"agentMemories">;
 }
 
 export function compactFingerprint(text: string): string {

@@ -31,6 +31,7 @@ Options:
     --report FILE          Write a markdown report of everything imported
     --ingest-endpoint      Use INGEST_URL/INGEST_KEY instead of Supabase direct insert
     --store-conversations  Also store conversation metadata and pyramid summaries
+    --retain-transcript    Include the source transcript in endpoint metadata
     --min-messages N       Override minimum message count for filtering
     --min-words N          Override minimum word count for borderline filtering
     --max-words N          Skip conversations exceeding N words (default: 50000)
@@ -576,7 +577,7 @@ def ingest_thought_supabase(content, metadata_dict, embed_text=None):
     return {"ok": True}
 
 
-def ingest_thought_endpoint(content, extra_metadata, full_text=None):
+def ingest_thought_endpoint(content, extra_metadata, full_text=None, retain_transcript=False):
     """POST a thought to a Convex-compatible ingest endpoint."""
     metadata = {
         **extra_metadata,
@@ -588,7 +589,7 @@ def ingest_thought_endpoint(content, extra_metadata, full_text=None):
         "metadata": metadata,
         "source_type": "chatgpt",
     }
-    if full_text:
+    if retain_transcript and full_text:
         metadata["full_text"] = full_text
 
     resp = http_post_with_retry(
@@ -604,9 +605,18 @@ def ingest_thought_endpoint(content, extra_metadata, full_text=None):
         return {"ok": False, "error": "No response from server"}
 
     try:
-        return resp.json()
+        result = resp.json()
     except ValueError:
         return {"ok": False, "error": f"Invalid JSON response: {resp.status_code}"}
+
+    if resp.status_code in (200, 201):
+        if isinstance(result, dict):
+            return {**result, "ok": True}
+        return {"ok": True, "response": result}
+
+    if isinstance(result, dict):
+        return result
+    return {"ok": False, "error": f"HTTP {resp.status_code}: {result}"}
 
 
 # ─── Conversation Storage (--store-conversations) ───────────────────────────
@@ -740,6 +750,7 @@ Examples:
     parser.add_argument("--verbose", action="store_true", help="Show full thoughts during processing")
     parser.add_argument("--report", type=str, metavar="FILE", help="Write a markdown report of everything imported")
     parser.add_argument("--ingest-endpoint", action="store_true", help="Use OB1_API_URL/OB1_API_KEY or INGEST_URL/INGEST_KEY instead of legacy Supabase direct insert")
+    parser.add_argument("--retain-transcript", action="store_true", help="Include full conversation transcripts in endpoint metadata (default: distilled thoughts only)")
     parser.add_argument("--store-conversations", action="store_true", help="Also store conversation metadata and pyramid summaries in chatgpt_conversations table")
     parser.add_argument("--min-messages", type=int, default=0, help="Override minimum message count for filtering")
     parser.add_argument("--min-words", type=int, default=0, help="Override minimum word count for borderline filtering (default: 50)")
@@ -1062,7 +1073,12 @@ def main():
                     "chatgpt_conversation_hash": conv_id,
                     "source_ref": metadata,
                 }
-                result = ingest_thought_endpoint(content, extra_metadata, full_text=dialogue_text)
+                result = ingest_thought_endpoint(
+                    content,
+                    extra_metadata,
+                    full_text=dialogue_text if args.retain_transcript else None,
+                    retain_transcript=args.retain_transcript,
+                )
             else:
                 result = ingest_thought_supabase(content, metadata, embed_text=thought_data["content"])
 

@@ -2,7 +2,7 @@ import { v } from "convex/values";
 import { internalAction, internalMutation, internalQuery } from "./_generated/server";
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
-import { memoryIdFromString, responseMemory } from "./lib/format";
+import { responseMemory } from "./lib/format";
 import type { PublicMemory } from "./lib/format";
 import { getEmbedding } from "./lib/openrouter";
 import {
@@ -171,7 +171,7 @@ export const fetchMemoryRows = internalQuery({
   handler: async (ctx, args) => {
     const rows: Doc<"agentMemories">[] = [];
     for (const id of args.ids) {
-      const row = await ctx.db.get(id);
+      const row = await ctx.db.get("agentMemories", id);
       if (row) rows.push(row);
     }
     return rows;
@@ -446,7 +446,7 @@ export const insertMemory = internalMutation({
         createdAt: timestamp,
       });
     }
-    const row = await ctx.db.get(id);
+    const row = await ctx.db.get("agentMemories", id);
     if (!row) throw new Error("Inserted memory disappeared");
     return row;
   },
@@ -566,36 +566,53 @@ export const memories = internalQuery({
     memory_type: v.optional(v.string()),
     task_id_prefix: v.optional(v.string()),
     limit: v.optional(v.number()),
+    cursor: v.optional(v.union(v.string(), v.null())),
   },
   handler: async (ctx, args) => {
     const limit = Math.min(200, Math.max(1, Math.floor(args.limit ?? 50)));
-    const rows = (await ctx.db.query("agentMemories").withIndex("by_workspace_created", (q) => q.eq("workspaceId", args.workspace_id)).collect())
+    const page = await ctx.db.query("agentMemories")
+      .withIndex("by_workspace_created", (q) => q.eq("workspaceId", args.workspace_id))
+      .order("desc")
+      .paginate({ numItems: limit, cursor: args.cursor ?? null });
+    const rows = page.page
       .filter((row) => !args.project_id || row.projectId === args.project_id)
       .filter((row) => !args.review_status || row.reviewStatus === args.review_status)
       .filter((row) => !args.lifecycle_status || row.lifecycleStatus === args.lifecycle_status)
       .filter((row) => !args.runtime_name || row.runtimeName === args.runtime_name)
       .filter((row) => !args.memory_type || row.memoryType === args.memory_type)
       .filter((row) => !args.task_id_prefix || (row.taskId ?? "").startsWith(args.task_id_prefix))
-      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
       .slice(0, limit);
-    return { memories: rows.map(responseMemory), count: rows.length };
+    return { memories: rows.map(responseMemory), count: rows.length, continue_cursor: page.continueCursor, is_done: page.isDone };
   },
 });
 
 export const reviewQueue = internalQuery({
-  args: { workspace_id: v.string(), project_id: v.optional(v.string()) },
+  args: {
+    workspace_id: v.string(),
+    project_id: v.optional(v.string()),
+    limit: v.optional(v.number()),
+    cursor: v.optional(v.union(v.string(), v.null())),
+  },
   handler: async (ctx, args) => {
-    const rows = (await ctx.db.query("agentMemories").withIndex("by_workspace_review", (q) => q.eq("workspaceId", args.workspace_id).eq("reviewStatus", "pending")).collect())
+    const limit = Math.min(200, Math.max(1, Math.floor(args.limit ?? 50)));
+    const page = await ctx.db.query("agentMemories")
+      .withIndex("by_workspace_created", (q) => q.eq("workspaceId", args.workspace_id))
+      .order("desc")
+      .paginate({ numItems: limit, cursor: args.cursor ?? null });
+    const rows = page.page
+      .filter((row) => row.reviewStatus === "pending")
       .filter((row) => !args.project_id || row.projectId === args.project_id)
-      .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-    return { memories: rows.map(responseMemory) };
+      .slice(0, limit);
+    return { memories: rows.map(responseMemory), count: rows.length, continue_cursor: page.continueCursor, is_done: page.isDone };
   },
 });
 
 export const memory = internalQuery({
   args: { id: v.string() },
   handler: async (ctx, args) => {
-    const memoryRow = await ctx.db.get(memoryIdFromString(args.id));
+    const id = ctx.db.normalizeId("agentMemories", args.id);
+    if (!id) return null;
+    const memoryRow = await ctx.db.get("agentMemories", id);
     if (!memoryRow) return null;
     const sourceRefs = await ctx.db.query("agentMemorySourceRefs").withIndex("by_memory", (q) => q.eq("memoryId", memoryRow._id)).collect();
     const artifacts = await ctx.db.query("agentMemoryArtifacts").withIndex("by_memory", (q) => q.eq("memoryId", memoryRow._id)).collect();
@@ -616,8 +633,12 @@ export const reviewMemory = internalMutation({
     related_memory_id: v.optional(v.string()),
   },
   handler: async (ctx, req) => {
-    const id = memoryIdFromString(req.id);
-    const before = await ctx.db.get(id);
+    const supportedActions = ["confirm", "evidence_only", "reject", "mark_stale", "dispute", "restrict_scope", "edit"];
+    if (!supportedActions.includes(req.action)) throw new Error(`Unsupported review action: ${req.action}`);
+    if (req.related_memory_id !== undefined) throw new Error("Related memory actions are unsupported");
+    const id = ctx.db.normalizeId("agentMemories", req.id);
+    if (!id) throw new Error("Memory not found");
+    const before = await ctx.db.get("agentMemories", id);
     if (!before) throw new Error("Memory not found");
     const updates: {
       reviewStatus?: string;
@@ -663,8 +684,8 @@ export const reviewMemory = internalMutation({
       if (req.content) updates.content = req.content;
       if (req.summary) updates.summary = req.summary;
     }
-    await ctx.db.patch(id, updates);
-    const after = await ctx.db.get(id);
+    await ctx.db.patch("agentMemories", id, updates);
+    const after = await ctx.db.get("agentMemories", id);
     if (!after) throw new Error("Memory not found after review");
     await ctx.db.insert("agentMemoryReviewActions", {
       memoryId: id,
@@ -676,15 +697,6 @@ export const reviewMemory = internalMutation({
       after,
       createdAt: now(),
     });
-    if (req.related_memory_id && ["merge", "supersede"].includes(req.action)) {
-      await ctx.db.insert("agentMemoryRelations", {
-        fromMemoryId: id,
-        toMemoryId: memoryIdFromString(req.related_memory_id),
-        relation: req.action === "merge" ? "merged_into" : "supersedes",
-        confidence: 1,
-        createdAt: now(),
-      });
-    }
     await ctx.db.insert("agentMemoryAuditEvents", {
       eventType: req.action === "confirm" ? "memory_confirmed" : req.action === "reject" ? "memory_rejected" : "memory_edited",
       workspaceId: before.workspaceId,

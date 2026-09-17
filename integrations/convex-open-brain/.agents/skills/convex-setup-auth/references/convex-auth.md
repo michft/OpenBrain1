@@ -22,20 +22,20 @@ a third-party provider.
 6. Install the auth packages:
    - `npm install @convex-dev/auth @auth/core>=0.37.0`
    - `npx @convex-dev/auth`
-8. Confirm the initializer created:
+7. Confirm the initializer created:
    - `convex/auth.config.ts`
    - `convex/auth.ts`
    - `convex/http.ts`
-9. Add the required `authTables` to `convex/schema.ts`
-10. Replace plain `ConvexProvider` wiring with `ConvexAuthProvider`
-11. Configure at least one auth method in `convex/auth.ts`
-12. Run `npx convex dev --once` or the normal dev flow to push the updated
+8. Add the required `authTables` to `convex/schema.ts`
+9. Replace plain `ConvexProvider` wiring with `ConvexAuthProvider`
+10. Configure at least one auth method in `convex/auth.ts`
+11. Run `npx convex dev --once` or the normal dev flow to push the updated
     schema and generated code
-13. Verify the client can sign in successfully
-14. Verify Convex receives authenticated identity in backend functions
-15. If the user wants production-ready setup, make sure the same auth setup is
+12. Verify the client can sign in successfully
+13. Verify Convex receives authenticated identity in backend functions
+14. If the user wants production-ready setup, make sure the same auth setup is
     configured for the production deployment as well
-16. Only add a `users` table and `storeUser` flow if the app needs app-level
+15. Only add a `users` table and `storeUser` flow if the app needs app-level
     user records inside Convex
 
 ## What This Reference Is For

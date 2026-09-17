@@ -111,7 +111,19 @@ Use the admin key in the same `x-brain-key` or bearer header for `PATCH /agent-m
 
 All database functions are internal Convex functions, reached through authenticated HTTP actions. Direct client calls to the Convex `.cloud` API cannot bypass the HTTP key.
 
+Supported review actions: `confirm`, `evidence_only`, `reject`, `mark_stale`, `dispute`, `restrict_scope`, and `edit`. Unknown actions, `merge`, `supersede`, and supplied `related_memory_id` are rejected before state or audit changes. Relation operations are not exposed by this review endpoint.
+
 To rotate a key, replace the corresponding deployed secret and update that credential's clients. Replacing the agent key does not require changing the admin key. Keep keys out of URLs where header authentication is available.
+
+### Listing and Duplicate Scan Limits
+
+`GET /agent-memory-api/memories` and `GET /agent-memory-api/memories/review` require `workspace_id`. Both accept `project_id`, `limit` (integer 1–200, default 50), and an opaque `cursor` (omit on the first request). The general listing also preserves `review_status`, `lifecycle_status`, `runtime_name`, `memory_type`, and `task_id_prefix` filters.
+
+Responses contain `memories`, `count`, `continue_cursor`, `is_done`, and `scan_limited`. Results follow descending `createdAt` order; storage pages are fetched until the requested number of matching memories is found, the query is exhausted, or 20 storage pages have been scanned. If this budget is reached before filling the page, `scan_limited` is true and `is_done` is false; the response may contain fewer matches or none. Use `continue_cursor` as the next request's `cursor`, keeping the same filters, to continue filling the requested result set. Stop only when `is_done` is true and `continue_cursor` is null. The review endpoint returns pending memories with the same pagination contract.
+
+`GET /duplicates` compares at most the newest 200 thoughts created in the last 90 days. Exact matches are grouped by the fingerprint index, with at most one additional representative per candidate fingerprint; that representative may be older or excluded by the candidate cap. Responses include `candidate_count`, `window_start`, and `truncated` (more than 200 thoughts in the recent window), alongside the existing `pairs`, `threshold`, `limit`, and `offset`. Pagination applies to this bounded result set, not an exhaustive historical scan.
+
+Embedding and metadata requests time out after 20 seconds. Metadata failures use local fallback metadata; unsupported model fields are discarded before storage. Embedding failures remain errors, so captures cannot silently store an incomplete vector.
 
 ## Validation
 

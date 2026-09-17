@@ -270,7 +270,7 @@ args: {
 ```ts
 // Good: treat parent-owned IDs as strings at the boundary
 args: {
-  userId: v.string();
+  userId: v.string(),
 }
 ```
 
