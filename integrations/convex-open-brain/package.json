@@ -10,6 +10,7 @@
     "smoke": "node smoke/live-smoke.mjs",
     "smoke:memory:mcp": "node --env-file=.env.local --experimental-strip-types smoke/memory-mcp-smoke.ts",
     "smoke:proxy": "node smoke/proxy-smoke.ts",
+    "smoke:classification": "node --env-file=.env.local smoke/classification-smoke.ts",
     "test": "vitest run"
   },
   "dependencies": {

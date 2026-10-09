@@ -5,8 +5,8 @@ flowchart LR
   Client[Your chosen MCP client] --> MCP[Deployed OB1 Convex MCP]
   Local[Local classifier client] --> Proxy[CLIProxyAPI / loopback 8317]
   Proxy --> OR[Existing OpenRouter classification model]
-  Convex[Convex classification] -.-> HTTPS[Public HTTPS / approval pending]
-  HTTPS -.-> Proxy
+  Convex[Dev Convex classification] --> HTTPS[Authenticated Tailscale Funnel HTTPS]
+  HTTPS --> Proxy
   Convex --> Embeddings[Existing OpenRouter embeddings]
 ```
 
@@ -87,16 +87,12 @@ Human confirmation is a product workflow; installation does not confirm memory.
 
 ## Hosted Convex classification
 
-Local service installation is verified. Hosted Convex cannot reach laptop
-loopback. Its classification continues using existing OpenRouter settings until
-an authenticated HTTPS endpoint is explicitly published and verified.
-
-The proposed endpoint uses this machine's MagicDNS HTTPS name:
+Development Convex classification now reaches the authenticated proxy over
+Tailscale Funnel HTTPS. The endpoint uses this machine's MagicDNS HTTPS name:
 `https://YOUR_MACHINE.YOUR_TAILNET.ts.net/v1`, forwarding only to the private
-loopback proxy. Public exposure was authorized by the user's continuation on
-2026-10-10. The publication command passed approval review, then Tailscale reported
-`Funnel is not enabled on your tailnet.` Its activation page requires admin sign-in.
-No Funnel endpoint is active yet; hosted classification settings remain unchanged.
+loopback proxy. Public exposure was authorized and activated on 2026-10-10.
+Classification uses the dedicated proxy client key and `ob1-classifier` alias.
+Production deployment and embedding provider/key/model remain unchanged.
 
 1. Enable Funnel through the node-specific activation URL printed by this command:
 
@@ -122,22 +118,37 @@ No Funnel endpoint is active yet; hosted classification settings remain unchange
    thought metadata contains explicit people from the model response; a successful
    capture alone can hide classification fallback. Delete only that test thought.
 
+   Run the repeatable hosted check from the integration directory:
+
+   ```bash
+   pnpm smoke:classification
+   ```
+
+   This requires a development deployment in `.env.local`, makes paid embedding
+   and classification requests, and deletes only its newly created smoke thought.
+   It verifies that the deleted thought returns `404`. Metadata is not supplied
+   by the test, so explicit person extraction demonstrates model classification.
+
 Follow
 [classification setup](t3-ob1-setup.md#classification-through-cliproxyapi) for the
 environment contract. Embedding provider/model remain unchanged.
 
-## Continuation checkpoint — 2026-10-10
+## Verification checkpoint — 2026-10-10
 
-- Reverified `dev:grandiose-deer-590`, private standalone credentials, connected
-  Tailscale device, and empty forwarding configuration.
-- Prior public-exposure approval blocker resolved by user continuation; new
-  blocker is Tailscale admin activation/sign-in, not another approval rejection.
-- Publication command printed a node-specific activation URL; integrated browser
-  opened that URL and reached the Tailscale sign-in screen.
-- Independent classifier base/key remain unset; hosted classifier still uses
-  `openai/gpt-4o-mini`. Existing embedding configuration remains present.
-- No T3 settings or global skill registration added. Public HTTPS and hosted
-  proxy-backed capture are not yet verified.
+- Reverified `dev:grandiose-deer-590`, private standalone credentials, and the
+  connected Tailscale device. Integrated browser opened the activation page;
+  user completed activation and background Funnel is now active.
+- Public proxy smoke passed: missing/invalid keys rejected, alias advertised,
+  management disabled, and real upstream JSON classification returned.
+- Saved previous classifier settings in a mode `0600` file under
+  `~/.config/ob1/convex-classification-backup-1791556851354.json` before switching
+  only the development classifier base/key/model to HTTPS and `ob1-classifier`.
+- Read back all three classifier settings; embedding configuration fingerprint
+  matched before and after the switch. Production was not changed.
+- Hosted `pnpm smoke:classification` passed real embedding capture and explicit
+  person extraction. Test thought deleted; subsequent fetch returned `404`.
+- `pnpm typecheck` passed. No T3 settings or global skill registration added.
+- Linear `NAT-833` remains inaccessible; setup and verification log retained here.
 
 ## Verification checkpoint — 2026-10-09
 
@@ -165,6 +176,22 @@ environment contract. Embedding provider/model remain unchanged.
   contain credentials. Smoke checks actual response rather than accepting local
   fallback as provider success.
 - Service stopped: inspect `launchctl print gui/$(id -u)/com.ob1.cliproxyapi`.
+- Restore the recorded development classifier before stopping HTTPS forwarding.
+  The private backup records that base/key were absent and the model was
+  `openai/gpt-4o-mini`. Check for subsequent user changes before restoring:
+
+  ```bash
+  cd /Users/mt/src/OpenBrain1/integrations/convex-open-brain
+  pnpm exec convex env remove OPEN_BRAIN_CLASSIFICATION_BASE_URL --deployment grandiose-deer-590
+  pnpm exec convex env remove OPEN_BRAIN_CLASSIFICATION_API_KEY --deployment grandiose-deer-590
+  pnpm exec convex env set OPEN_BRAIN_CLASSIFICATION_MODEL openai/gpt-4o-mini --deployment grandiose-deer-590
+  /Applications/Tailscale.app/Contents/MacOS/Tailscale funnel --https=443 off
+  ```
+
+  Removing both separate classifier settings restores the existing OpenRouter
+  path. Do not alter embedding variables or production. If the Mac is offline
+  while proxy classification remains configured, captures use local metadata
+  fallback; embeddings still require OpenRouter.
 - Stop/remove service:
 
   ```bash
