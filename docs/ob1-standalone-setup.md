@@ -93,17 +93,51 @@ an authenticated HTTPS endpoint is explicitly published and verified.
 
 The proposed endpoint uses this machine's MagicDNS HTTPS name:
 `https://YOUR_MACHINE.YOUR_TAILNET.ts.net/v1`, forwarding only to the private
-loopback proxy. Automatic approval review rejected creating persistent Tailscale Funnel
-exposure because standalone installation did not explicitly authorize publishing
-the credential-backed proxy to the public internet. No Funnel was created. This
-URL is a proposed target, not a configured/live proxy endpoint.
+loopback proxy. Public exposure was authorized by the user's continuation on
+2026-10-10. The publication command passed approval review, then Tailscale reported
+`Funnel is not enabled on your tailnet.` Its activation page requires admin sign-in.
+No Funnel endpoint is active yet; hosted classification settings remain unchanged.
 
-After explicit approval, use the installed Tailscale app executable by full path
-to avoid its broken command symlink, verify HTTPS using the smoke script, then
-set the development deployment's separate classification base/key/model using
-the private installed client key and `ob1-classifier` alias. Follow
+1. Enable Funnel through the node-specific activation URL printed by this command:
+
+   ```bash
+   /Applications/Tailscale.app/Contents/MacOS/Tailscale funnel --bg --https=443 http://127.0.0.1:8317
+   ```
+
+   Use the full executable path; this machine's `tailscale` symlink fails bundle
+   identification. Sign in on the activation page and enable Funnel for the node.
+   Keep unrelated forwarding intact. Background mode retains the forwarding
+   configuration across Tailscale restarts.
+
+2. Verify public authentication, disabled management, and actual classification:
+
+   ```bash
+   cd /Users/mt/src/OpenBrain1/integrations/convex-open-brain
+   OB1_PROXY_HTTPS_URL=https://YOUR_MACHINE.YOUR_TAILNET.ts.net/v1 pnpm smoke:proxy
+   ```
+
+3. Only after HTTPS verification passes, record the prior classification settings
+   privately and set the development deployment's separate base/key/model using
+   the installed dedicated proxy key and `ob1-classifier` alias. Verify captured
+   thought metadata contains explicit people from the model response; a successful
+   capture alone can hide classification fallback. Delete only that test thought.
+
+Follow
 [classification setup](t3-ob1-setup.md#classification-through-cliproxyapi) for the
 environment contract. Embedding provider/model remain unchanged.
+
+## Continuation checkpoint — 2026-10-10
+
+- Reverified `dev:grandiose-deer-590`, private standalone credentials, connected
+  Tailscale device, and empty forwarding configuration.
+- Prior public-exposure approval blocker resolved by user continuation; new
+  blocker is Tailscale admin activation/sign-in, not another approval rejection.
+- Publication command printed a node-specific activation URL; integrated browser
+  opened that URL and reached the Tailscale sign-in screen.
+- Independent classifier base/key remain unset; hosted classifier still uses
+  `openai/gpt-4o-mini`. Existing embedding configuration remains present.
+- No T3 settings or global skill registration added. Public HTTPS and hosted
+  proxy-backed capture are not yet verified.
 
 ## Verification checkpoint — 2026-10-09
 

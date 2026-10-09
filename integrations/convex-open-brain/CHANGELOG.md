@@ -12,6 +12,8 @@
 - Add isolated standalone MCP bundle/skill installation, private CLIProxyAPI
   classification profile, macOS login service, and real proxy smoke validation.
   Standalone setup disconnects the prior shared Codex entry without adding T3 hooks.
+- Document approved HTTPS publication, required Tailscale admin activation,
+  public proxy smoke, and hosted classification verification before switching.
 
 Practical OB1 systems from Nate B. Jones:
 [Substack](https://substack.com/@natesnewsletter),
