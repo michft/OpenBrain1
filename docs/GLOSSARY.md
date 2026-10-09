@@ -13,3 +13,4 @@
 | Embedding | Vector used for semantic retrieval; existing storage expects 1536 dimensions from the configured model. |
 | Handoff | Bounded context transferred to another agent or human; not automatically durable memory. |
 | Idempotency | Same workspace/project and writeback key replay without creating another memory row. |
+| Standalone installation | Backend/proxy and private client bundle installed without automatically registering OB1 in T3 or global skill discovery. |

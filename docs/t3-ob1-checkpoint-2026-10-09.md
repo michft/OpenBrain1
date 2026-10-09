@@ -1,5 +1,9 @@
 # T3 / OB1 setup checkpoint — 2026-10-09
 
+Historical checkpoint. Later user instruction selected standalone installation
+and removed the shared Codex/T3 registration and global skill link. See the
+[current standalone checkpoint](ob1-standalone-setup.md#verification-checkpoint--2026-10-09).
+
 ```mermaid
 flowchart LR
   T3[T3 Codex child] -->|Native recall verified| MCP[Development Convex MCP]

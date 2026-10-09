@@ -43,6 +43,9 @@ Convex is the product backend going forward; Supabase is now a legacy compatibil
 
 Expected outcome: a configured Convex deployment exposes authenticated REST, MCP, and Agent Memory endpoints, with vector embeddings and metadata enrichment supplied by OpenRouter.
 
+For local CLIProxyAPI installation without registering a client in T3, see the
+[standalone setup and checkpoint](../../docs/ob1-standalone-setup.md).
+
 For guidance on keeping the MCP surface focused and reviewing tool overhead, see the [tool audit guide](../../docs/05-tool-audit.md).
 
 ## Endpoints

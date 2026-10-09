@@ -1,5 +1,9 @@
 # T3 Code, CLIProxyAPI, and OB1
 
+T3 integration is optional. Current installation uses the
+[standalone setup](ob1-standalone-setup.md); its shared Codex connection and global
+skill registration were removed at the user's request.
+
 ```mermaid
 flowchart TD
   T3[T3 Code agent runtime] -->|Model requests / tool results| Proxy[CLIProxyAPI]

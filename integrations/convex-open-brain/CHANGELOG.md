@@ -9,6 +9,9 @@
 - Allow independent HTTPS classification credentials and endpoint; keep existing
   OpenRouter embedding configuration and model unchanged.
 - Add runtime-neutral memory skill, T3/CLIProxyAPI setup, and live MCP memory smoke.
+- Add isolated standalone MCP bundle/skill installation, private CLIProxyAPI
+  classification profile, macOS login service, and real proxy smoke validation.
+  Standalone setup disconnects the prior shared Codex entry without adding T3 hooks.
 
 Practical OB1 systems from Nate B. Jones:
 [Substack](https://substack.com/@natesnewsletter),
