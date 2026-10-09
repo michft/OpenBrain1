@@ -1,0 +1,15 @@
+{
+  "name": "OB1 Agent Memory",
+  "description": "Runtime-neutral scoped recall, pending writeback, and usage reporting through OB1 MCP.",
+  "category": "skills",
+  "author": { "name": "Michael Tomkins", "github": "michft" },
+  "version": "0.1.0",
+  "requires": {
+    "open_brain": true,
+    "services": ["OB1 Agent Memory MCP"],
+    "tools": ["Skill-capable MCP client"]
+  },
+  "tags": ["agent-memory", "mcp", "trust-policy", "runtime-neutral"],
+  "difficulty": "intermediate",
+  "estimated_time": "10 minutes"
+}

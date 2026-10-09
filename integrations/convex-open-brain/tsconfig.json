@@ -10,5 +10,5 @@
     "allowSyntheticDefaultImports": true,
     "forceConsistentCasingInFileNames": true
   },
-  "include": ["convex/**/*.ts"]
+  "include": ["convex/**/*.ts", "smoke/**/*.ts", "scripts/**/*.ts"]
 }

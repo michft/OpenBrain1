@@ -390,8 +390,20 @@ export const insertMemory = internalMutation({
     artifacts: v.array(artifactValidator),
   },
   handler: async (ctx, args) => {
-    const existing = await ctx.db.query("agentMemories").withIndex("by_idempotency", (q) => q.eq("idempotencyKey", args.idempotencyKey)).unique();
+    const projectId = args.projectId ?? null;
+    const existing = await ctx.db.query("agentMemories")
+      .withIndex("by_idempotencyKey_and_workspaceId_and_projectId", (q) => q
+        .eq("idempotencyKey", args.idempotencyKey).eq("workspaceId", args.workspaceId).eq("projectId", projectId))
+      .unique();
     if (existing) return existing;
+    // Historical projectless rows may omit the optional field instead of storing null.
+    if (projectId === null) {
+      const legacy = await ctx.db.query("agentMemories")
+        .withIndex("by_idempotencyKey_and_workspaceId_and_projectId", (q) => q
+          .eq("idempotencyKey", args.idempotencyKey).eq("workspaceId", args.workspaceId).eq("projectId", undefined))
+        .unique();
+      if (legacy) return legacy;
+    }
     const timestamp = now();
     const id = await ctx.db.insert("agentMemories", {
       thoughtId: args.thoughtId ?? null,

@@ -31,7 +31,7 @@ Convex is the product backend going forward; Supabase is now a legacy compatibil
 - Node.js 24+
 - pnpm
 - A Convex deployment
-- An OpenRouter API key for embeddings and metadata classification
+- An OpenRouter API key for embeddings; classification optionally uses separate HTTPS credentials
 - A remote HTTP client for calling the deployed REST, MCP, or Agent Memory endpoints
 
 ## Quickstart
@@ -57,7 +57,7 @@ https://YOUR_DEPLOYMENT.convex.site
 | --- | --- | --- |
 | Dashboard REST | `https://YOUR_DEPLOYMENT.convex.site` | `/health`, `/thoughts`, `/capture`, `/search`, `/stats`, `/duplicates`, `/ingest` |
 | Agent Memory API | `https://YOUR_DEPLOYMENT.convex.site/agent-memory-api` | `/recall`, `/writeback`, review queue, inspector, recall traces |
-| MCP | `https://YOUR_DEPLOYMENT.convex.site/mcp?key=YOUR_KEY` | `search`, `fetch`, `search_thoughts`, `list_thoughts`, `thought_stats`, `capture_thought` |
+| MCP | `https://YOUR_DEPLOYMENT.convex.site/mcp` | Six thought tools plus `recall_memory`, `writeback_memory`, `report_memory_usage`; agent header required |
 | Legacy REST alias | `https://YOUR_DEPLOYMENT.convex.site/open-brain-rest` | Helps old scripts that include the old function slug |
 
 ## Environment
@@ -122,7 +122,9 @@ Authorization: Bearer YOUR_MCP_ACCESS_KEY
 
 The server is stateless: JSON POST responses, notification acknowledgements, and no SSE stream or session ID. Native clients can omit `Origin`. Browser clients must use the endpoint's own origin or an origin configured in the comma-separated `MCP_ALLOWED_ORIGINS` deployment variable.
 
-The six MCP tools access captured **thoughts**. Agent Memory recall/write-back remains a separate `/agent-memory-api` REST surface. This deployment uses one shared private-brain agent credential; it does not provide OAuth or separate user/workspace identities for a public multi-tenant service.
+The six original MCP tools access captured **thoughts**. Three additional tools expose structured **Agent Memory** recall, pending writeback, and usage reporting through the same connection. The `/agent-memory-api` REST contract remains available; human review stays there with the separate admin key. MCP writeback is always untrusted, even when called with admin credentials. This deployment uses one shared private-brain agent credential; it does not provide OAuth or separate user/workspace identities for a public multi-tenant service.
+
+See [T3 Code / CLIProxyAPI setup](../../docs/t3-ob1-setup.md) for runtime connection, independent classification settings, memory skill, and live verification. Idempotency now uses workspace/project plus the existing key through an additive index; legacy same-scope replays remain compatible. Terms are defined in the [integration glossary](../../docs/GLOSSARY.md).
 
 ### Human Review and Trust
 

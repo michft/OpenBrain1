@@ -87,7 +87,14 @@ describe("MCP security and lifecycle", () => {
     const listing = await (await rpc(t, { jsonrpc: "2.0", id: 3, method: "tools/list" })).json();
     expect(listing.result.tools.map((tool: { name: string }) => tool.name)).toEqual([
       "search", "fetch", "search_thoughts", "list_thoughts", "thought_stats", "capture_thought",
+      "recall_memory", "writeback_memory", "report_memory_usage",
     ]);
+    const memoryTools = listing.result.tools.filter((tool: { name: string }) => tool.name.endsWith("_memory") || tool.name === "report_memory_usage");
+    for (const tool of memoryTools) {
+      expect(tool.inputSchema.required).toContain("workspace_id");
+      expect(tool.inputSchema.additionalProperties).toBe(false);
+    }
+    expect(memoryTools.find((tool: { name: string }) => tool.name === "writeback_memory").inputSchema.properties).not.toHaveProperty("trusted_writeback");
     expect((await t.fetch("/mcp", { headers: { "x-brain-key": agentKey, accept: "text/event-stream" } })).status).toBe(405);
   });
 
