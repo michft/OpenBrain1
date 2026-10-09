@@ -68,6 +68,54 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllEnvs());
 
 describe("agent memory writeback trust", () => {
+  it("scopes explicit idempotency keys by workspace and project while preserving replay", async () => {
+    const t = makeTest();
+    const scopes = [
+      { workspace_id: "workspace-test", project_id: "project-test" },
+      { workspace_id: "other-workspace", project_id: "project-test" },
+      { workspace_id: "workspace-test", project_id: "other-project" },
+      { workspace_id: "workspace-test", project_id: null },
+    ];
+    const ids = [];
+    for (const scope of scopes) {
+      const args = writebackArgs({ ...scope, idempotency_key: "shared-client-key" });
+      const first = await t.action(internal.agentMemory.writeback, args);
+      const replay = await t.action(internal.agentMemory.writeback, args);
+      if (!("memories" in first) || !("memories" in replay)) throw new Error("Expected safe writeback");
+      expect(first.memories[0].scope).toMatchObject(scope);
+      expect(replay.memories[0].memory_id).toBe(first.memories[0].memory_id);
+      ids.push(first.memories[0].memory_id);
+    }
+    expect(new Set(ids).size).toBe(scopes.length);
+    expect(await t.run((ctx) => ctx.db.query("agentMemories").collect())).toHaveLength(scopes.length);
+  });
+
+  it("scopes default idempotency keys by project as well as workspace", async () => {
+    const t = makeTest();
+    const first = await t.action(internal.agentMemory.writeback, writebackArgs());
+    const other = await t.action(internal.agentMemory.writeback, writebackArgs({ project_id: "other-project" }));
+    if (!("memories" in first) || !("memories" in other)) throw new Error("Expected safe writeback");
+    expect(other.memories[0].memory_id).not.toBe(first.memories[0].memory_id);
+    expect(other.memories[0].scope.project_id).toBe("other-project");
+  });
+
+  it("replays historical raw keys including omitted project IDs without returning a different workspace", async () => {
+    const t = makeTest();
+    const args = writebackArgs({ project_id: null, idempotency_key: "legacy-client-key" });
+    const first = await t.action(internal.agentMemory.writeback, args);
+    if (!("memories" in first)) throw new Error("Expected safe writeback");
+    const [row] = await t.run((ctx) => ctx.db.query("agentMemories").collect());
+    expect(row.idempotencyKey).toBe("legacy-client-key:0");
+    await t.run((ctx) => ctx.db.patch("agentMemories", row._id, { projectId: undefined }));
+    const replay = await t.action(internal.agentMemory.writeback, args);
+    const other = await t.action(internal.agentMemory.writeback, { ...args, workspace_id: "other-workspace" });
+    if (!("memories" in replay) || !("memories" in other)) throw new Error("Expected safe writeback");
+    expect(replay.memories[0].memory_id).toBe(first.memories[0].memory_id);
+    expect(other.memories[0].memory_id).not.toBe(first.memories[0].memory_id);
+    expect(other.memories[0].scope.workspace_id).toBe("other-workspace");
+    expect(await t.run((ctx) => ctx.db.query("agentMemories").collect())).toHaveLength(2);
+  });
+
   it("paginates memory listings in descending creation order", async () => {
     const t = makeTest();
     await t.action(internal.agentMemory.writeback, writebackArgs({

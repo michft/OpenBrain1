@@ -37,10 +37,22 @@ export async function getEmbedding(text: string): Promise<number[]> {
 }
 
 export async function extractMetadata(text: string): Promise<unknown> {
-  const key = process.env.OPENROUTER_API_KEY;
+  const classificationBase = process.env.OPEN_BRAIN_CLASSIFICATION_BASE_URL?.trim();
+  const classificationKey = process.env.OPEN_BRAIN_CLASSIFICATION_API_KEY?.trim();
+  const customClassification = Boolean(classificationBase || classificationKey);
+  const key = customClassification ? classificationKey : process.env.OPENROUTER_API_KEY;
   if (!key) return fallbackMetadata(text);
   try {
-    const response = await fetch(`${OPENROUTER_BASE}/chat/completions`, {
+    let base = OPENROUTER_BASE;
+    if (customClassification) {
+      if (!classificationBase) return fallbackMetadata(text);
+      const url = new URL(classificationBase);
+      if (url.protocol !== "https:" || url.username || url.password || url.search || url.hash) {
+        return fallbackMetadata(text);
+      }
+      base = url.href.replace(/\/+$/, "");
+    }
+    const response = await fetch(`${base}/chat/completions`, {
       method: "POST",
       signal: AbortSignal.timeout(20_000),
       headers: {

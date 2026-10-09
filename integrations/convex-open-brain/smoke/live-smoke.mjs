@@ -55,7 +55,7 @@ try {
   await client.connect(transport);
   await client.ping();
   const tools = await client.listTools();
-  assert.deepEqual(tools.tools.map((tool) => tool.name).sort(), ["search", "fetch", "search_thoughts", "list_thoughts", "thought_stats", "capture_thought"].sort());
+  assert.deepEqual(tools.tools.map((tool) => tool.name).sort(), ["search", "fetch", "search_thoughts", "list_thoughts", "thought_stats", "capture_thought", "recall_memory", "writeback_memory", "report_memory_usage"].sort());
   checks.push("SDK initialize, initialized, ping, tools/list");
 
   const marker = `OB1 MCP deployment smoke ${randomUUID()}`;
@@ -82,7 +82,7 @@ try {
     assert(!result.isError, `${name} failed.`);
     assert(result.content?.length, `${name} returned no content.`);
   }
-  checks.push("all six MCP tools, real embedding capture/search/fetch");
+  checks.push("all six thoughts MCP tools, real embedding capture/search/fetch");
 } catch (error) {
   runError = error;
 } finally {

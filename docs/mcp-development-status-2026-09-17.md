@@ -18,9 +18,9 @@ Development MCP is deployed and verified at:
 https://grandiose-deer-590.convex.site/mcp
 ```
 
-Use Streamable HTTP with `Authorization: Bearer <MCP_ACCESS_KEY>` or `x-brain-key`. Credentials remain in the ignored integration `.env.local` and the development deployment environment; no secrets are recorded here. Existing OpenCode configuration was not changed.
+Use Streamable HTTP with `Authorization: Bearer <MCP_ACCESS_KEY>` or `x-brain-key`. Credentials remain in the ignored integration `.env.local` and the development deployment environment; no secrets are recorded here. The initial OpenCode verification used an isolated configuration; see the completion checkpoint below for persistent client setup.
 
-Production was explicitly deferred. No repository push or public release was performed.
+Production remains deferred. The development changes and review fixes were merged into `michft/OpenBrain1` through [PR #2](https://github.com/michft/OpenBrain1/pull/2); no upstream contribution was made.
 
 ## Changes
 
@@ -32,7 +32,7 @@ Production was explicitly deferred. No repository push or public release was per
 - Replaced the shallow smoke check with an official MCP SDK client exercising all six tools and real embedding-backed capture/search/fetch.
 - Installed required development secrets and replaced the placeholder citation root with the protected REST thought endpoint. Citation URLs require authentication; a dashboard remains optional.
 
-## Verification
+## Initial Verification
 
 | Check | Result |
 | --- | --- |
@@ -52,6 +52,27 @@ Regression tests cover missing/bad credentials, bearer/header/query authenticati
 The first integration test run failed while the HTTP agent was still replacing the public API references and protocol implementation. Those failures are resolved. Dependency setup initially found a Convex peer mismatch and a broken Vite peer link; the SDK upgrade and `pnpm install --fix-lockfile` resolved both. A frozen-install command initially ran from the repository root, which has no package manifest; rerunning in the integration directory passed.
 
 Non-fatal CLI notices: Node emitted an experimental localStorage warning; Convex reported it could not auto-update `VITE_CONVEX_URL` and suggested refreshing generated AI guidance. No duplicate local environment names were found, and neither notice prevented deployment or the live checks.
+
+## Development MVP Completion
+
+The merged revision `bd3f5614` (same source tree as reviewed `24a91291`) was deployed to `dev:grandiose-deer-590` using the one-shot development command. Production was not touched.
+
+- PR #2 CI passed: Convex type checking/tests, Markdown lint, OB1 gate, and labeling.
+- Deployment completed successfully with type checking enabled.
+- Live SDK smoke passed authentication/origin rejection, blocked direct Convex access, initialization, all six tools, and real embedding-backed capture/search/fetch. Its temporary thought was deleted.
+- All 47 deterministic Convex tests passed after deployment, including populated cursor pagination and rejection without state/audit changes.
+- Added `smoke/memory-smoke.mjs`; both Luna and parent live runs passed listing contracts, invalid limits, malformed IDs, agent review denial, and explicit unsupported admin action rejection. The selected default workspace (`ob1-staging`) returned no records, so live cursor continuation and record-state comparisons were skipped and reported. Audit tables are not exposed by the HTTP API.
+- Persistent OpenCode setup adds only `mcp.ob1-brain` to `~/.config/opencode/opencode.json`. Its agent credential is read through file substitution from `~/.config/opencode/secrets/ob1-brain-key` (directory mode `0700`, file mode `0600`); the admin key is not installed in OpenCode. Refresh this file when rotating the deployed agent key.
+- Luna and parent independently verified `ob1-brain` reports connected with `MCP_ACCESS_KEY` unset. Parent additionally checked private file permissions and that the stored credential matches the agent key, not the admin key.
+- Convex repeated a non-fatal environment-update notice; inspection found no duplicate environment names. No environment changes were needed.
+
+Launch the configured client normally:
+
+```bash
+opencode /Users/mt/src/OpenBrain1
+```
+
+Existing models and other MCP entries are unchanged. The pre-existing `pencil` entry has a missing local binary; that unrelated connection remains unavailable.
 
 ## Boundaries and Next Release
 

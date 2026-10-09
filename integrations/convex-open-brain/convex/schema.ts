@@ -120,6 +120,7 @@ export default defineSchema({
     .index("by_workspace_review", ["workspaceId", "reviewStatus"])
     .index("by_project", ["workspaceId", "projectId"])
     .index("by_idempotency", ["idempotencyKey"])
+    .index("by_idempotencyKey_and_workspaceId_and_projectId", ["idempotencyKey", "workspaceId", "projectId"])
     .vectorIndex("by_embedding", {
       vectorField: "embedding",
       dimensions: 1536,
